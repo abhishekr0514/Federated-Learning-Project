@@ -1,0 +1,60 @@
+[build-system]
+requires = ["setuptools>=65.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "medshield-fl"
+version = "0.1.0"
+description = "Privacy Masked Federated Learning for Heart Disease Diagnosis"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+    { name = "MedShield-FL Core Team" }
+]
+dependencies = [
+    "fastapi>=0.109.0",
+    "uvicorn[standard]>=0.27.0",
+    "pydantic>=2.6.0",
+    "pydantic-settings>=2.1.0",
+    "sqlalchemy>=2.0.25",
+    "asyncpg>=0.29.0",
+    "alembic>=1.13.1",
+    "python-jose[cryptography]>=3.3.0",
+    "passlib[bcrypt]>=1.7.4",
+    "python-multipart>=0.0.9",
+    "httpx>=0.26.0",
+    "numpy>=1.26.0",
+    "pandas>=2.2.0",
+]
+
+[project.optional-dependencies]
+ml = [
+    "torch>=2.2.0",
+    "torchaudio>=2.2.0",
+    "transformers>=4.37.0",
+    "torch-geometric>=2.4.0",
+    "scikit-learn>=1.4.0",
+    "wfdb>=4.1.2",
+    "dice-ml>=0.11",
+    "dowhy>=0.11.1",
+]
+fl = [
+    "flwr[simulation]>=1.7.0",
+    "opacus>=1.4.0",
+]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.5",
+    "pytest-cov>=4.1.0",
+    "ruff>=0.2.0",
+    "black>=24.1.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "backend/tests"]
+python_files = ["test_*.py"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
