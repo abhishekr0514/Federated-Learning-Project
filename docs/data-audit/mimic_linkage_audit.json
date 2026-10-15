@@ -1,0 +1,138 @@
+{
+  "audit_id": "medshield.mimic_linkage_audit",
+  "audit_version": "1.0.0",
+  "audit_timestamp_utc": "2026-10-15T16:40:00Z",
+  "phase": "Prompt 16B read-only MIMIC install linkage audit",
+  "training_conducted": false,
+  "merged_dataset_materialized": false,
+  "production_inference_changed": false,
+  "cross_cohort_joins_attempted": false,
+  "raw_datasets_modified": false,
+  "documented_paths_only": true,
+  "official_documentation": {
+    "mimic_iv_ecg": {
+      "name": "MIMIC-IV-ECG: Diagnostic Electrocardiogram Matched Subset",
+      "version": "1.0",
+      "url": "https://physionet.org/content/mimic-iv-ecg/1.0/",
+      "doi": "10.13026/4nqg-sb35",
+      "license": "PhysioNet Credentialed Health Data License 1.5.0",
+      "dua": "PhysioNet Credentialed Health Data Use Agreement 1.5.0",
+      "training": "CITI Data or Specimens Only Research"
+    },
+    "mimic_iv": {
+      "name": "MIMIC-IV",
+      "version": "2.2",
+      "url": "https://physionet.org/content/mimiciv/2.2/",
+      "license": "PhysioNet Credentialed Health Data License 1.5.0",
+      "dua": "PhysioNet Credentialed Health Data Use Agreement 1.5.0",
+      "training": "CITI Data or Specimens Only Research"
+    },
+    "mimic_iv_note": {
+      "name": "MIMIC-IV-Note: Deidentified free-text clinical notes",
+      "version": "2.2",
+      "url": "https://physionet.org/content/mimic-iv-note/2.2/",
+      "doi": "10.13026/1n74-ne17",
+      "license": "PhysioNet Credentialed Health Data License 1.5.0",
+      "dua": "PhysioNet Credentialed Health Data Use Agreement 1.5.0",
+      "training": "CITI Data or Specimens Only Research"
+    }
+  },
+  "presence": {
+    "mimic_iv_ecg": {
+      "present": false,
+      "documented_roots": ["data/raw/mimic-iv-ecg", "data/raw/mimic-iv-ecg/1.0"],
+      "found_root": null
+    },
+    "mimic_iv": {
+      "present": false,
+      "documented_roots": ["data/raw/mimic-iv", "data/raw/mimiciv", "data/raw/mimic-iv/2.2"],
+      "found_root": null
+    },
+    "mimic_iv_note": {
+      "present": false,
+      "documented_roots": ["data/raw/mimic-iv-note", "data/raw/mimic-iv-note/2.2"],
+      "found_root": null
+    }
+  },
+  "missing_datasets": ["mimic_iv_ecg", "mimic_iv", "mimic_iv_note"],
+  "all_required_modules_present": false,
+  "local_schema_verified": false,
+  "local_referential_integrity": null,
+  "aggregate_linkage_counts": {
+    "status": "NOT_COMPUTED",
+    "reason": "No authorized local MIMIC files at documented paths; counts would require source tables."
+  },
+  "documentation_level_linkage_keys": {
+    "ecg_to_patient": {
+      "key": "subject_id",
+      "source_table": "MIMIC-IV-ECG record_list.csv",
+      "target_table": "MIMIC-IV hosp.patients",
+      "local_verified": false
+    },
+    "ecg_to_study": {
+      "key": "study_id",
+      "source_table": "record_list.csv / waveform directory s{study_id}",
+      "local_verified": false
+    },
+    "ecg_to_encounter": {
+      "key": "temporal overlap of ecg_time with admissions.admittime/dischtime (same subject_id); hadm_id is not a native ECG column",
+      "local_verified": false,
+      "documented_overlap_rates_from_physionet": {
+        "hospital_admission_overlap_approx": "55%",
+        "ed_visit_overlap_approx": "25%",
+        "note": "Official page rates; not recomputed locally."
+      }
+    },
+    "ecg_to_note": {
+      "key": "waveform_note_links.csv.note_id",
+      "target": "MIMIC-IV-Note note_id (EK-domain cardiologist reports described as forthcoming in Note v2.2)",
+      "local_verified": false
+    },
+    "ecg_to_tabular": {
+      "keys": ["subject_id", "hadm_id via temporal encounter window"],
+      "candidate_tables": ["omr", "labevents", "chartevents", "diagnoses_icd"],
+      "local_verified": false
+    }
+  },
+  "decision_matrix": {
+    "ecg_to_patient_linkage": {
+      "verdict": "BLOCKED",
+      "evidence": "MIMIC-IV-ECG absent at documented paths; subject_id join not locally verifiable."
+    },
+    "ecg_to_note_linkage": {
+      "verdict": "BLOCKED",
+      "evidence": "MIMIC-IV-ECG and MIMIC-IV-Note absent; waveform_note_links.csv not on disk. Official Note v2.2 documents discharge/radiology, not EK ECG reports."
+    },
+    "ecg_to_tabular_linkage": {
+      "verdict": "BLOCKED",
+      "evidence": "MIMIC-IV clinical tables absent; no local omr/labevents/chartevents schema check."
+    },
+    "shared_target_validity": {
+      "verdict": "BLOCKED",
+      "evidence": "No local labels to audit; ECG rhythm/machine text is not confirmed heart-disease diagnosis."
+    },
+    "temporal_alignment": {
+      "verdict": "BLOCKED",
+      "evidence": "No local timestamps. Official docs: machine clocks unsynchronized; many ECGs outside ED/ICU windows."
+    },
+    "leakage_safe_patient_splits": {
+      "verdict": "BLOCKED",
+      "evidence": "No local subject_id universe to partition; split manifest not generated."
+    },
+    "two_modality_research_readiness": {
+      "verdict": "BLOCKED",
+      "evidence": "Required modules missing; cannot confirm two-modality co-occurrence locally."
+    },
+    "three_modality_gat_training_readiness": {
+      "verdict": "BLOCKED",
+      "evidence": "Authorized linked cohort not installed; shared target undefined; ADR-010/ADR-011."
+    }
+  },
+  "verdict_three_modality_gat_training": "BLOCKED",
+  "forbidden_joins_not_performed": [
+    "PTB-XL patient_id to MIMIC subject_id",
+    "cardio_train.id to MIMIC subject_id",
+    "NBME pn_num to MIMIC note_id"
+  ],
+  "smallest_next_step": "Complete PhysioNet credentialing and DUA; install MIMIC-IV-ECG 1.0, MIMIC-IV 2.2, and MIMIC-IV-Note 2.2 under data/raw/ (gitignored); re-run Prompt 16B auditor."
+}

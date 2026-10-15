@@ -43,7 +43,7 @@
 ### 3. Known Defects / Gaps
 - **Model Storage**: Object Storage service layer (`local_storage_ref`) for weights and artifact management is pending implementation.
 - **Repository Pattern**: Repository classes for model entities pending implementation.
-- **ML Pipeline (Prompt 12–15)**: PTB-XL ECG baseline, BioClinicalBERT text encoder, Neural Tabular Encoder, and **MedShieldDiagnosticNet GAT fusion** research module (`ml/models/gnn_fusion.py` — untrained, synthetic-test only). **Prompt 16 linkage audit:** no verified cross-cohort patient/encounter join or shared target locally — **three-modality GAT training BLOCKED** (`docs/data-audit/MULTIMODAL_LINKAGE_AUDIT.md`). Federated training, DiCE/DoWhy, and production inference remain **not enabled**; diagnosis API still returns not-implemented.
+- **ML Pipeline (Prompt 12–16B)**: PTB-XL ECG baseline, BioClinicalBERT text encoder, Neural Tabular Encoder, and untrained GAT fusion architecture. **Prompt 16/16B:** no PTB–NBME–cardio crosswalk; **MIMIC-IV-ECG, MIMIC-IV, and MIMIC-IV-Note are not installed** at documented `data/raw/` paths — **three-modality GAT training BLOCKED** (`docs/data-audit/MIMIC_LINKAGE_AUDIT.md`). Federated training, DiCE/DoWhy, and production inference remain **not enabled**.
 
 ---
 

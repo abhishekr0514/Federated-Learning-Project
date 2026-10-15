@@ -137,3 +137,20 @@ PTB-XL, `cardio_train.csv`, and NBME coexist locally but originate from independ
 
 ### Status
 **ACCEPTED** (Prompt 16)
+
+---
+
+## ADR-011: Prompt 16B — MIMIC Install Absent; GAT Training Remains Blocked
+
+### Context & Problem
+Prompt 16B requires a local audit of authorized MIMIC-IV-ECG, MIMIC-IV, and MIMIC-IV-Note. Documented roots (`data/raw/mimic-iv-ecg`, `data/raw/mimic-iv`, `data/raw/mimic-iv-note`) are empty. Official PhysioNet pages document `subject_id` / `study_id` / `waveform_note_links.note_id` and warn that ECG clocks may not align with EHR time; MIMIC-IV-Note v2.2 lists discharge and radiology tables, while EK cardiologist reports are described as forthcoming.
+
+### Decision
+- Do **not** search unauthorized paths or download credentialed data from automation.
+- Treat all MIMIC linkage and shared-target verdicts as **BLOCKED** until a gitignored local install passes `ml/datasets/mimic_linkage_audit.py`.
+- Do **not** join PTB-XL, NBME, or `cardio_train.csv` to MIMIC identifiers.
+- Do **not** open three-modality GAT training, merged cohort construction, or production diagnosis endpoints.
+- Documentation-level keys are recorded in `docs/data-audit/MIMIC_LINKAGE_AUDIT.md` as **unverified locally**.
+
+### Status
+**ACCEPTED** (Prompt 16B)
