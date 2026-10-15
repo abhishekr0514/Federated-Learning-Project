@@ -1,0 +1,53 @@
+{
+  "nbme_internal_files": {
+    "linkage_possible": true,
+    "join_keys": [
+      "pn_num",
+      "feature_num",
+      "case_num"
+    ],
+    "evidence": {
+      "patient_notes_unique_pn_num": 42146,
+      "patient_notes_unique_case_num": 10,
+      "train_annotation_rows": 14300,
+      "train_unique_pn_num": 1000,
+      "train_unique_feature_num": 143,
+      "train_pn_num_subset_of_patient_notes": true,
+      "train_feature_num_subset_of_features_csv": true,
+      "multi_span_location_rows": 1650,
+      "test_csv_rows": 5,
+      "test_csv_is_sample_only": true,
+      "test_csv_evidence": "Local test.csv contains 5 rows (competition ID stubs only). Full Kaggle hidden test labels are not present in this repository.",
+      "supervised_task": "Character-span location prediction for (pn_num, feature_num) pairs \u2014 clinical concept / phrase identification, not diagnosis classification."
+    },
+    "verdict": "GO \u2014 internal NBME files join on documented competition keys (within NBME task only)"
+  },
+  "ECG_PTB-XL_to_cardio_train": {
+    "linkage_possible": false,
+    "reason": "PTB-XL waveform files (.hea, .dat) are ABSENT from the repository. Even if present, PTB-XL patient_ids and cardio_train.csv 'id' integers originate from entirely different cohorts (German ECG study vs. Russian hospital cardiovascular survey). No verified crosswalk exists.",
+    "verdict": "BLOCKED"
+  },
+  "ECG_PTB-XL_to_NBME_notes": {
+    "linkage_possible": false,
+    "reason": "PTB-XL waveform files absent. PTB-XL uses German hospital patient cohort. NBME notes use US medical licensing examination synthetic/de-identified text. No shared patient identifier exists and no crosswalk is documented.",
+    "verdict": "BLOCKED"
+  },
+  "cardio_train_to_NBME_notes": {
+    "linkage_possible": false,
+    "reason": "cardio_train.csv uses sequential integer IDs from a Russian cardiovascular survey. NBME patient notes use pn_num identifiers from a US medical licensing examination dataset. These represent completely different patient populations, countries, and data domains. No crosswalk, no shared identifier, no documented common source.",
+    "verdict": "BLOCKED"
+  },
+  "GAT_multimodal_fusion_feasibility": {
+    "feasible": false,
+    "gat_node_design_if_data_existed": {
+      "ecg_node": "One node per 12-lead ECG recording embedding (patient_id grouping)",
+      "text_node": "One node per clinical note embedding",
+      "tabular_node": "One node per structured feature vector",
+      "cross_modal_edges": "Require verified same-patient / same-encounter identifiers",
+      "supervision": "Requires a single clinically valid target on the fused encounter",
+      "missing_modality": "Would require explicit missing-modality policy \u2014 not evaluable without paired data"
+    },
+    "reason": "No legitimate patient-level pairing exists across any two of the three datasets. PTB-XL waveform data is absent. NBME labels are clinical phrase spans, not cardiovascular diagnosis. cardio_train.csv has no shared identifier with either ECG or NLP dataset. Training a supervised multimodal GAT requires co-occurring same-patient records across all three modalities, which do not exist in this repository.",
+    "verdict": "BLOCKED"
+  }
+}

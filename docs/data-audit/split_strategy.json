@@ -1,0 +1,39 @@
+{
+  "cardio_train_binary_classification": {
+    "task": "Binary cardiovascular disease classification (tabular only)",
+    "grouping_key": "id column \u2014 but this is a sequential integer, not a true patient encounter ID. No documented repeated-measurement information. Assume one row per patient unless documentation contradicts.",
+    "recommendation": "Patient-independent split by id (assuming each id = 1 patient). Stratified by label (cardio) to preserve class balance.",
+    "train_fraction": 0.7,
+    "val_fraction": 0.15,
+    "test_fraction": 0.15,
+    "split_seed": 42,
+    "stratification": "cardio (binary)",
+    "leakage_risks": [
+      "Height and weight may correlate strongly with age and BMI \u2014 ensure no circular feature derivation.",
+      "ap_lo (diastolic BP) and ap_hi (systolic BP) are direct risk markers \u2014 must not be derived from label.",
+      "Implausible blood pressure values (e.g., ap_lo > ap_hi, extreme outliers) must be identified and handled before splitting."
+    ],
+    "preprocessing_rule": "All scalers, normalizers fitted on train split ONLY. Val/test receive train-fitted transforms.",
+    "dataset_checksum_sha256": "21a705d23381b0dfd6a6416da701b490744f1fc3b47e9ff3db3968c420ffa10c",
+    "manifest_output_path": "data/manifests/cardio_patient_split_seed42.json"
+  },
+  "NBME_NLP_phrase_identification": {
+    "task": "NLP phrase identification: character-span extraction from clinical notes",
+    "grouping_key": "pn_num (patient note ID) \u2014 split by pn_num to ensure the same note never appears in both train and val",
+    "recommendation": "Hold out notes by pn_num. Do NOT allow the same note to appear in both train and val.",
+    "split_seed": 42,
+    "leakage_risks": [
+      "BioClinicalBERT tokenizer must be applied using pre-trained vocabulary, not fitted on this dataset. No leakage risk from tokenizer.",
+      "test.csv from Kaggle has withheld labels \u2014 cannot be used for evaluation. Use train/val split only.",
+      "Split by pn_num (not by annotation row id) to prevent the same note appearing in train and validation."
+    ],
+    "dataset_checksum_sha256": "364a046f54189ae6f3f746226830a124a89203d67c3076e0ef901a2f16f2dbc8",
+    "notes_checksum_sha256": "b0cea588f3ca8610973891105e460ee75bf7e0bdc6483de317d00a077b44b368",
+    "manifest_output_path": "data/manifests/nbme_note_split_seed42.json"
+  },
+  "PTB-XL_ECG": {
+    "task": "N/A \u2014 waveform files absent",
+    "recommendation": "BLOCKED \u2014 cannot define a split without signal data. If waveform data is added in future: split by patient_id column in ptbxl_database.csv. PTB-XL provides recommended splits (strat_fold field). Per-lead z-score normalization must be fitted on train folds only.",
+    "verdict": "BLOCKED"
+  }
+}

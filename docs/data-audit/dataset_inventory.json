@@ -1,0 +1,111 @@
+{
+  "audit_timestamp": "2026-10-15T09:07:47Z",
+  "datasets_dir": "C:\\Federated-Learning-Project\\data\\datasets",
+  "subdirectories": [],
+  "files": {
+    "data/datasets/cardio_train.csv": {
+      "relative_path": "data/datasets/cardio_train.csv",
+      "filename": "cardio_train.csv",
+      "size_bytes": 2941524,
+      "sha256": "21a705d23381b0dfd6a6416da701b490744f1fc3b47e9ff3db3968c420ffa10c",
+      "format": "CSV",
+      "artifact_role": "tabular_training_data",
+      "parse_status": "PARSE_OK",
+      "source_license_documented_in_repo": false
+    },
+    "data/datasets/ecg-ptb-xl.ipynb": {
+      "relative_path": "data/datasets/ecg-ptb-xl.ipynb",
+      "filename": "ecg-ptb-xl.ipynb",
+      "size_bytes": 2189151,
+      "sha256": "773f2b98dfa748d2a3c33cdf55e7be3dd2d01c60baceff58c68528f2f35a8f02",
+      "format": "IPYNB",
+      "artifact_role": "research_notebook",
+      "parse_status": "PARSE_OK",
+      "source_license_documented_in_repo": false
+    },
+    "data/datasets/features.csv": {
+      "relative_path": "data/datasets/features.csv",
+      "filename": "features.csv",
+      "size_bytes": 4354,
+      "sha256": "ba021dbf8b601d1ef7cfbdb378358dc3bd13f43282e94f6dbb16cb61d6024654",
+      "format": "CSV",
+      "artifact_role": "metadata_lookup",
+      "parse_status": "PARSE_OK",
+      "source_license_documented_in_repo": false
+    },
+    "data/datasets/patient_notes.csv": {
+      "relative_path": "data/datasets/patient_notes.csv",
+      "filename": "patient_notes.csv",
+      "size_bytes": 34966100,
+      "sha256": "b0cea588f3ca8610973891105e460ee75bf7e0bdc6483de317d00a077b44b368",
+      "format": "CSV",
+      "artifact_role": "clinical_text_corpus",
+      "parse_status": "PARSE_OK",
+      "source_license_documented_in_repo": false
+    },
+    "data/datasets/sample_submission.csv": {
+      "relative_path": "data/datasets/sample_submission.csv",
+      "filename": "sample_submission.csv",
+      "size_bytes": 93,
+      "sha256": "06539347d4293242f3337bb0d57e3288bd97ec48c85c21cabe6d5287bf0397e6",
+      "format": "CSV",
+      "artifact_role": "submission_template",
+      "parse_status": "PARSE_OK",
+      "source_license_documented_in_repo": false
+    },
+    "data/datasets/test.csv": {
+      "relative_path": "data/datasets/test.csv",
+      "filename": "test.csv",
+      "size_bytes": 141,
+      "sha256": "212a67b8711a0e88a7e4d776003070570725eccf0f6b67a4e64bdcb387a935d3",
+      "format": "CSV",
+      "artifact_role": "nlp_test_stub",
+      "parse_status": "PARSE_OK",
+      "source_license_documented_in_repo": false
+    },
+    "data/datasets/train.csv": {
+      "relative_path": "data/datasets/train.csv",
+      "filename": "train.csv",
+      "size_bytes": 761246,
+      "sha256": "364a046f54189ae6f3f746226830a124a89203d67c3076e0ef901a2f16f2dbc8",
+      "format": "CSV",
+      "artifact_role": "nlp_training_annotations",
+      "parse_status": "PARSE_OK",
+      "source_license_documented_in_repo": false
+    }
+  },
+  "duplicate_checksum_groups": [],
+  "ptbxl_waveform_check": {
+    "ptbxl_database.csv_in_datasets": false,
+    "scp_statements.csv_in_datasets": false,
+    "waveform_hea_files_under_data": 0,
+    "waveform_dat_files_under_data": 0,
+    "ecg_ptb_xl_notebook_present": true,
+    "verdict": "BLOCKED \u2014 PTB-XL metadata CSVs and waveform signal files (.hea, .dat) are absent from the repository under data/ (verified by extension search)."
+  },
+  "notebook_inspection": {
+    "type": "Jupyter Notebook",
+    "size_bytes": 2189151,
+    "paths_referenced_in_cells": [
+      "ptbxl_database.csv\\",
+      "    .dataframe tbody tr th {\\n",
+      "    .dataframe thead th {\\n",
+      "] = running_loss / len(loader.dataset)\\n",
+      "scp_statements.csv\\",
+      "from torch.utils.data import Dataset, DataLoader\\n",
+      "    .dataframe tbody tr th:only-of-type {\\n",
+      "Search common Kaggle locations for the PTB-XL raw-signal root (contains ptbxl_database.csv).",
+      "]].head())\\n",
+      "ptbxl_database.csv"
+    ],
+    "external_urls_found": [],
+    "waveform_files_accessible": "UNKNOWN \u2014 Notebook references waveform paths but these files are not in data/datasets/",
+    "note": "The existence of this notebook does NOT prove PTB-XL waveform data is present. The notebook is only evidence of prior experimentation with PTB-XL data that must have existed elsewhere."
+  },
+  "missing_expected_files": {
+    "ptbxl_database.csv": "MISSING under data/",
+    "scp_statements.csv": "MISSING under data/",
+    "PTB-XL .hea waveform headers": "MISSING under data/ (0 files found)",
+    "PTB-XL .dat waveform signals": "MISSING under data/ (0 files found)"
+  }
+}

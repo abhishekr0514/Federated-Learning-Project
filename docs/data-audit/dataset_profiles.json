@@ -1,0 +1,346 @@
+{
+  "cardio_train.csv": {
+    "dataset_name": "Cardiovascular Disease Dataset",
+    "source": "Public Kaggle-style cardiovascular survey CSV (exact Kaggle page/version not cited in repo \u2014 UNVERIFIED)",
+    "identity_verification": "Schema matches widely mirrored 'Cardiovascular Disease' tabular dataset (semicolon delimiter, age in days, binary cardio label). Official license file not found in repository.",
+    "intended_task": "Binary classification: presence/absence of cardiovascular disease",
+    "profile": {
+      "delimiter": ";",
+      "encoding": "utf-8",
+      "n_columns": 13,
+      "n_rows": 70000,
+      "columns": [
+        "id",
+        "age",
+        "gender",
+        "height",
+        "weight",
+        "ap_hi",
+        "ap_lo",
+        "cholesterol",
+        "gluc",
+        "smoke",
+        "alco",
+        "active",
+        "cardio"
+      ],
+      "duplicate_rows": 0,
+      "missingness_by_column": {
+        "id": {
+          "count": 0,
+          "pct": 0.0
+        },
+        "age": {
+          "count": 0,
+          "pct": 0.0
+        },
+        "gender": {
+          "count": 0,
+          "pct": 0.0
+        },
+        "height": {
+          "count": 0,
+          "pct": 0.0
+        },
+        "weight": {
+          "count": 0,
+          "pct": 0.0
+        },
+        "ap_hi": {
+          "count": 0,
+          "pct": 0.0
+        },
+        "ap_lo": {
+          "count": 0,
+          "pct": 0.0
+        },
+        "cholesterol": {
+          "count": 0,
+          "pct": 0.0
+        },
+        "gluc": {
+          "count": 0,
+          "pct": 0.0
+        },
+        "smoke": {
+          "count": 0,
+          "pct": 0.0
+        },
+        "alco": {
+          "count": 0,
+          "pct": 0.0
+        },
+        "active": {
+          "count": 0,
+          "pct": 0.0
+        },
+        "cardio": {
+          "count": 0,
+          "pct": 0.0
+        }
+      },
+      "label_distribution": {
+        "0": 35021,
+        "1": 34979
+      },
+      "unique_id_count": 70000
+    },
+    "data_quality_audit": {
+      "n_rows": 70000,
+      "parse_errors": 0,
+      "ap_lo_gt_ap_hi": 1234,
+      "ap_hi_out_of_plausible_range_80_250": 247,
+      "ap_lo_out_of_plausible_range_40_150": 1034,
+      "height_out_of_plausible_range_100_220_cm": 30,
+      "weight_out_of_plausible_range_30_200_kg": 7,
+      "age_out_of_plausible_range_18_100_years_in_days": 0,
+      "invalid_cholesterol_level": 0,
+      "invalid_glucose_level": 0,
+      "invalid_gender_code": 0,
+      "notes": "Age is stored in days (consistent with public Kaggle cardiovascular survey schema). Blood pressure outliers are common in this dataset and require documented cleaning before modeling."
+    },
+    "label_column": "cardio",
+    "label_meanings": {
+      "0": "No cardiovascular disease (per dataset annotation)",
+      "1": "Cardiovascular disease present (per dataset annotation)"
+    },
+    "notes": "Label meaning is self-reported/annotated in the dataset, not clinically validated ground truth. Features include age, height, weight, blood pressure, cholesterol, glucose, smoking, alcohol, physical activity.",
+    "identifier_type": "id column present \u2014 sequential integer, not cryptographic or cross-linkable patient ID"
+  },
+  "patient_notes.csv": {
+    "dataset_name": "NBME Clinical Patient Notes",
+    "source": "Kaggle \u2014 NBME Score Clinical Patient Notes Competition (2022)",
+    "intended_task": "Clinical concept / phrase identification from medical licensing examination notes",
+    "profile": {
+      "delimiter": ",",
+      "encoding": "utf-8",
+      "n_columns": 3,
+      "n_rows": 42146,
+      "columns": [
+        "pn_num",
+        "case_num",
+        "pn_history"
+      ],
+      "duplicate_rows": 0,
+      "missingness_by_column": {
+        "pn_num": {
+          "count": 0,
+          "pct": 0.0
+        },
+        "case_num": {
+          "count": 0,
+          "pct": 0.0
+        },
+        "pn_history": {
+          "count": 0,
+          "pct": 0.0
+        }
+      },
+      "label_distribution": "N/A (no label column specified)",
+      "unique_id_count": 42146
+    },
+    "identifier_column": "pn_num",
+    "notes": "These are de-identified medical licensing exam notes, not real hospital patient records. The task is NLP \u2014 identifying specific clinical phrases, not diagnosing cardiovascular disease."
+  },
+  "features.csv": {
+    "dataset_name": "NBME Feature Definitions",
+    "source": "Kaggle \u2014 NBME Score Clinical Patient Notes Competition (2022)",
+    "intended_task": "Lookup table: feature identifiers and their clinical concept descriptions",
+    "profile": {
+      "delimiter": ",",
+      "encoding": "utf-8",
+      "n_columns": 3,
+      "n_rows": 143,
+      "columns": [
+        "feature_num",
+        "case_num",
+        "feature_text"
+      ],
+      "duplicate_rows": 0,
+      "missingness_by_column": {
+        "feature_num": {
+          "count": 0,
+          "pct": 0.0
+        },
+        "case_num": {
+          "count": 0,
+          "pct": 0.0
+        },
+        "feature_text": {
+          "count": 0,
+          "pct": 0.0
+        }
+      },
+      "label_distribution": "N/A (no label column specified)",
+      "unique_id_count": 143
+    },
+    "notes": "This is a reference/lookup file, not a training dataset. Maps feature_num to clinical concept phrases."
+  },
+  "train.csv": {
+    "dataset_name": "NBME Training Annotations",
+    "source": "Kaggle \u2014 NBME Score Clinical Patient Notes Competition (2022)",
+    "intended_task": "Supervised NLP: mapping (patient_note, feature) pairs to character-span annotations",
+    "profile": {
+      "delimiter": ",",
+      "encoding": "utf-8",
+      "n_columns": 6,
+      "n_rows": 14300,
+      "columns": [
+        "id",
+        "case_num",
+        "pn_num",
+        "feature_num",
+        "annotation",
+        "location"
+      ],
+      "duplicate_rows": 0,
+      "missingness_by_column": {
+        "id": {
+          "count": 0,
+          "pct": 0.0
+        },
+        "case_num": {
+          "count": 0,
+          "pct": 0.0
+        },
+        "pn_num": {
+          "count": 0,
+          "pct": 0.0
+        },
+        "feature_num": {
+          "count": 0,
+          "pct": 0.0
+        },
+        "annotation": {
+          "count": 0,
+          "pct": 0.0
+        },
+        "location": {
+          "count": 0,
+          "pct": 0.0
+        }
+      },
+      "label_distribution": "N/A (no label column specified)",
+      "unique_id_count": 14300
+    },
+    "notes": "Annotations are character-level spans identifying where a clinical concept appears in a patient note. Target is phrase location, NOT cardiovascular diagnosis label."
+  },
+  "test.csv": {
+    "dataset_name": "NBME Test Set (Kaggle submission format)",
+    "source": "Kaggle \u2014 NBME Score Clinical Patient Notes Competition (2022)",
+    "profile": {
+      "delimiter": ",",
+      "encoding": "utf-8",
+      "n_columns": 4,
+      "n_rows": 5,
+      "columns": [
+        "id",
+        "case_num",
+        "pn_num",
+        "feature_num"
+      ],
+      "duplicate_rows": 0,
+      "missingness_by_column": {
+        "id": {
+          "count": 0,
+          "pct": 0.0
+        },
+        "case_num": {
+          "count": 0,
+          "pct": 0.0
+        },
+        "pn_num": {
+          "count": 0,
+          "pct": 0.0
+        },
+        "feature_num": {
+          "count": 0,
+          "pct": 0.0
+        }
+      },
+      "label_distribution": "N/A (no label column specified)",
+      "unique_id_count": 5
+    },
+    "notes": "This is the Kaggle competition test file (withheld labels). Small file likely contains only IDs, not the full hidden test set."
+  },
+  "sample_submission.csv": {
+    "dataset_name": "NBME Sample Submission Template",
+    "source": "Kaggle \u2014 NBME Score Clinical Patient Notes Competition (2022)",
+    "profile": {
+      "delimiter": ",",
+      "encoding": "utf-8",
+      "n_columns": 2,
+      "n_rows": 5,
+      "columns": [
+        "id",
+        "location"
+      ],
+      "duplicate_rows": 0,
+      "missingness_by_column": {
+        "id": {
+          "count": 0,
+          "pct": 0.0
+        },
+        "location": {
+          "count": 2,
+          "pct": 40.0
+        }
+      },
+      "label_distribution": "N/A (no label column specified)",
+      "unique_id_count": 5
+    },
+    "notes": "Template file for Kaggle competition submissions. Contains no training labels."
+  },
+  "ecg-ptb-xl.ipynb": {
+    "dataset_name": "PTB-XL ECG Jupyter Notebook",
+    "type": "Research Notebook (NOT a dataset)",
+    "inspection": {
+      "type": "Jupyter Notebook",
+      "size_bytes": 2189151,
+      "paths_referenced_in_cells": [
+        "ptbxl_database.csv\\",
+        "    .dataframe tbody tr th {\\n",
+        "    .dataframe thead th {\\n",
+        "] = running_loss / len(loader.dataset)\\n",
+        "scp_statements.csv\\",
+        "from torch.utils.data import Dataset, DataLoader\\n",
+        "    .dataframe tbody tr th:only-of-type {\\n",
+        "Search common Kaggle locations for the PTB-XL raw-signal root (contains ptbxl_database.csv).",
+        "]].head())\\n",
+        "ptbxl_database.csv"
+      ],
+      "external_urls_found": [],
+      "waveform_files_accessible": "UNKNOWN \u2014 Notebook references waveform paths but these files are not in data/datasets/",
+      "note": "The existence of this notebook does NOT prove PTB-XL waveform data is present. The notebook is only evidence of prior experimentation with PTB-XL data that must have existed elsewhere."
+    }
+  },
+  "ptbxl_ecg_audit": {
+    "waveform_files_present": false,
+    "metadata_files_present": false,
+    "load_feasibility": "BLOCKED \u2014 cannot load ECG signals without .hea/.dat and ptbxl_database.csv",
+    "official_reference": "https://physionet.org/content/ptb-xl/1.0.3/",
+    "published_record_counts_unverified_locally": "~21,799 ECG records / ~18,869 patients (from PTB-XL publication; not counted locally)",
+    "target_definitions": {
+      "notebook_primary_task": "Multi-label diagnostic-superclass classification (NORM / MI / STTC / CD / HYP) with five independent binary sigmoid heads (BCEWithLogitsLoss).",
+      "repository_proxy_task_documentation": "README.md and backend ModelVersion default target_definition describe a separate binary proxy: normal sinus rhythm (SNOMED 426783006) vs pathological superclasses (documented as MI, STTC). This SNOMED code was NOT found in ecg-ptb-xl.ipynb text.",
+      "task_category": "Diagnostic statement / superclass coding (rhythm vs structural disease tasks are distinct). Neither task equals validated clinical heart-disease ground truth."
+    },
+    "resampling_feasibility_if_data_added": "PTB-XL provides 500 Hz and 100 Hz releases; downsampling 500 Hz 10 s traces to 100 Hz yields 12 x 1000 tensors IF metadata fs and sig_len fields confirm duration and lead layout.",
+    "verdict": "BLOCKED",
+    "verdict_reason": "BLOCKED \u2014 PTB-XL metadata CSVs and waveform signal files (.hea, .dat) are absent from the repository under data/ (verified by extension search)."
+  },
+  "nbme_internal_linkage": {
+    "patient_notes_unique_pn_num": 42146,
+    "patient_notes_unique_case_num": 10,
+    "train_annotation_rows": 14300,
+    "train_unique_pn_num": 1000,
+    "train_unique_feature_num": 143,
+    "train_pn_num_subset_of_patient_notes": true,
+    "train_feature_num_subset_of_features_csv": true,
+    "multi_span_location_rows": 1650,
+    "test_csv_rows": 5,
+    "test_csv_is_sample_only": true,
+    "test_csv_evidence": "Local test.csv contains 5 rows (competition ID stubs only). Full Kaggle hidden test labels are not present in this repository.",
+    "supervised_task": "Character-span location prediction for (pn_num, feature_num) pairs \u2014 clinical concept / phrase identification, not diagnosis classification."
+  }
+}
