@@ -1,5 +1,5 @@
 {
-  "audit_timestamp": "2026-10-15T09:07:47Z",
+  "audit_timestamp": "2026-10-15T10:26:52Z",
   "datasets_dir": "C:\\Federated-Learning-Project\\data\\datasets",
   "subdirectories": [],
   "files": {
@@ -76,36 +76,89 @@
   },
   "duplicate_checksum_groups": [],
   "ptbxl_waveform_check": {
-    "ptbxl_database.csv_in_datasets": false,
-    "scp_statements.csv_in_datasets": false,
-    "waveform_hea_files_under_data": 0,
-    "waveform_dat_files_under_data": 0,
+    "install_path": "C:\\Federated-Learning-Project\\data\\raw\\ptb-xl",
+    "ptbxl_present": true,
     "ecg_ptb_xl_notebook_present": true,
-    "verdict": "BLOCKED \u2014 PTB-XL metadata CSVs and waveform signal files (.hea, .dat) are absent from the repository under data/ (verified by extension search)."
+    "waveform_hea_files_under_data": 43598,
+    "waveform_dat_files_under_data": 43598,
+    "verdicts_11b": {
+      "PTBXL_installation_completeness": "GO",
+      "ECG_signal_loading": "GO",
+      "preprocessing_12x1000_at_100hz": "GO",
+      "ECG_target_validity": "CONDITIONAL_GO",
+      "patient_independent_evaluation_feasibility": "CONDITIONAL_GO",
+      "ECG_only_research_readiness": "GO",
+      "multimodal_GAT_readiness": "BLOCKED"
+    },
+    "verdict": "GO \u2014 see ptbxl_ecg_audit.json"
   },
   "notebook_inspection": {
     "type": "Jupyter Notebook",
     "size_bytes": 2189151,
     "paths_referenced_in_cells": [
-      "ptbxl_database.csv\\",
-      "    .dataframe tbody tr th {\\n",
-      "    .dataframe thead th {\\n",
-      "] = running_loss / len(loader.dataset)\\n",
       "scp_statements.csv\\",
-      "from torch.utils.data import Dataset, DataLoader\\n",
-      "    .dataframe tbody tr th:only-of-type {\\n",
+      "] = running_loss / len(loader.dataset)\\n",
+      "ptbxl_database.csv",
       "Search common Kaggle locations for the PTB-XL raw-signal root (contains ptbxl_database.csv).",
-      "]].head())\\n",
-      "ptbxl_database.csv"
+      "    .dataframe thead th {\\n",
+      "    .dataframe tbody tr th:only-of-type {\\n",
+      "    .dataframe tbody tr th {\\n",
+      "from torch.utils.data import Dataset, DataLoader\\n",
+      "ptbxl_database.csv\\",
+      "]].head())\\n"
     ],
     "external_urls_found": [],
     "waveform_files_accessible": "UNKNOWN \u2014 Notebook references waveform paths but these files are not in data/datasets/",
     "note": "The existence of this notebook does NOT prove PTB-XL waveform data is present. The notebook is only evidence of prior experimentation with PTB-XL data that must have existed elsewhere."
   },
-  "missing_expected_files": {
-    "ptbxl_database.csv": "MISSING under data/",
-    "scp_statements.csv": "MISSING under data/",
-    "PTB-XL .hea waveform headers": "MISSING under data/ (0 files found)",
-    "PTB-XL .dat waveform signals": "MISSING under data/ (0 files found)"
-  }
+  "ptbxl_installation": {
+    "path": "C:\\Federated-Learning-Project\\data\\raw\\ptb-xl",
+    "present": true,
+    "metadata_sha256": {
+      "ptbxl_database.csv": "7600de9c1b27d181d850b3c6038a35d7c3ddb6bb33b702e3a20252a6859d216b",
+      "scp_statements.csv": "ad05b0b1fcae83bb1230755ad9cfc7c96f303feddc08a4a9ad5bdc9ca63bac8f"
+    },
+    "waveform_file_counts": {
+      "records100_hea": 21799,
+      "records100_dat": 21799,
+      "records500_hea": 21799,
+      "records500_dat": 21799
+    },
+    "manifest_checksum_verification": {
+      "status": "OK",
+      "root_file_checksums": {
+        "LICENSE.txt": {
+          "present": true,
+          "sha256_computed": "9a78e7f22742dde9f66ae235ec793ba2212019dc4d0ced75c4da09ced0b35fb2",
+          "sha256_manifest": "9a78e7f22742dde9f66ae235ec793ba2212019dc4d0ced75c4da09ced0b35fb2",
+          "matches_manifest": true
+        },
+        "ptbxl_database.csv": {
+          "present": true,
+          "sha256_computed": "7600de9c1b27d181d850b3c6038a35d7c3ddb6bb33b702e3a20252a6859d216b",
+          "sha256_manifest": "7600de9c1b27d181d850b3c6038a35d7c3ddb6bb33b702e3a20252a6859d216b",
+          "matches_manifest": true
+        },
+        "scp_statements.csv": {
+          "present": true,
+          "sha256_computed": "ad05b0b1fcae83bb1230755ad9cfc7c96f303feddc08a4a9ad5bdc9ca63bac8f",
+          "sha256_manifest": "ad05b0b1fcae83bb1230755ad9cfc7c96f303feddc08a4a9ad5bdc9ca63bac8f",
+          "matches_manifest": true
+        },
+        "example_physionet.py": {
+          "present": true,
+          "sha256_computed": "8de8392559989810d368053904e442eff162d1dadb8e76788e197e24c98fe81d",
+          "sha256_manifest": "8de8392559989810d368053904e442eff162d1dadb8e76788e197e24c98fe81d",
+          "matches_manifest": true
+        },
+        "RECORDS": {
+          "present": true,
+          "sha256_computed": "56d37274b0b02339e9c30bff8c9a9f2a6fb3cb2bb7bcd5d7c55355451d53896a",
+          "sha256_manifest": "56d37274b0b02339e9c30bff8c9a9f2a6fb3cb2bb7bcd5d7c55355451d53896a",
+          "matches_manifest": true
+        }
+      }
+    }
+  },
+  "missing_expected_files": {}
 }

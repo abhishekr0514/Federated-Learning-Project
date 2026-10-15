@@ -1,6 +1,6 @@
 {
-  "audit_version": "11A",
-  "ECG": "BLOCKED",
+  "audit_version": "11B",
+  "ECG": "GO",
   "Tabular": "CONDITIONAL_GO",
   "Clinical_text": "CONDITIONAL_GO",
   "Multimodal_fusion": "BLOCKED",
@@ -8,8 +8,13 @@
   "Centralized_evaluation": "CONDITIONAL_GO",
   "Clinical_diagnosis_claim": "BLOCKED",
   "verdicts": {
-    "ECG_only_research": "BLOCKED",
-    "ECG_verdict_reason": "PTB-XL metadata and .hea/.dat waveform signal files are absent from data/; ECG loading cannot be verified locally",
+    "ECG_only_research": "GO",
+    "ECG_verdict_reason": "PTB-XL 1.0.3 verified at data/raw/ptb-xl: 21,799/21,799 LR+HR waveforms present; 96/96 wfdb sample loads at 12\u00d71000@100Hz (records100).",
+    "PTBXL_installation_completeness": "GO",
+    "ECG_signal_loading": "GO",
+    "preprocessing_12x1000_at_100hz": "GO",
+    "ECG_target_validity": "CONDITIONAL_GO",
+    "patient_independent_evaluation_feasibility": "CONDITIONAL_GO",
     "Tabular_only_research": "CONDITIONAL_GO",
     "Tabular_verdict_reason": "cardio_train.csv: 70,000 rows, balanced binary label, zero missing cells; requires BP/outlier cleaning; label is survey annotation not clinically validated",
     "Clinical_text_research": "CONDITIONAL_GO",
@@ -25,9 +30,8 @@
   },
   "additional_datasets_required": {
     "PTB-XL_waveform_files": {
-      "status": "ESSENTIAL",
-      "source": "https://physionet.org/content/ptb-xl/1.0.3/",
-      "license": "CC BY 4.0 \u2014 open access"
+      "status": "INSTALLED",
+      "path": "C:\\Federated-Learning-Project\\data\\raw\\ptb-xl"
     },
     "MIMIC-IV-ECG": {
       "status": "OPTIONAL \u2014 enables genuine multimodal ECG+clinical linkage",
@@ -36,7 +40,8 @@
     }
   },
   "audit_limitations": [
-    "PTB-XL waveform sample quality and completeness cannot be verified without the actual files.",
+    "PTB-XL signal audit used 96-record wfdb sample (full existence check on all 21,799 paths).",
+    "wfdb required for signal load verification (project optional dependency [ml]).",
     "cardio_train.csv source version cannot be confirmed beyond filename; license attribution is unverified.",
     "NBME dataset license restricts certain uses \u2014 must verify competition terms before production deployment.",
     "No model training was performed; no accuracy, AUC, or F1 values have been computed or estimated."

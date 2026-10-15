@@ -298,16 +298,16 @@
       "type": "Jupyter Notebook",
       "size_bytes": 2189151,
       "paths_referenced_in_cells": [
-        "ptbxl_database.csv\\",
-        "    .dataframe tbody tr th {\\n",
-        "    .dataframe thead th {\\n",
-        "] = running_loss / len(loader.dataset)\\n",
         "scp_statements.csv\\",
-        "from torch.utils.data import Dataset, DataLoader\\n",
-        "    .dataframe tbody tr th:only-of-type {\\n",
+        "] = running_loss / len(loader.dataset)\\n",
+        "ptbxl_database.csv",
         "Search common Kaggle locations for the PTB-XL raw-signal root (contains ptbxl_database.csv).",
-        "]].head())\\n",
-        "ptbxl_database.csv"
+        "    .dataframe thead th {\\n",
+        "    .dataframe tbody tr th:only-of-type {\\n",
+        "    .dataframe tbody tr th {\\n",
+        "from torch.utils.data import Dataset, DataLoader\\n",
+        "ptbxl_database.csv\\",
+        "]].head())\\n"
       ],
       "external_urls_found": [],
       "waveform_files_accessible": "UNKNOWN \u2014 Notebook references waveform paths but these files are not in data/datasets/",
@@ -315,19 +315,156 @@
     }
   },
   "ptbxl_ecg_audit": {
-    "waveform_files_present": false,
-    "metadata_files_present": false,
-    "load_feasibility": "BLOCKED \u2014 cannot load ECG signals without .hea/.dat and ptbxl_database.csv",
-    "official_reference": "https://physionet.org/content/ptb-xl/1.0.3/",
-    "published_record_counts_unverified_locally": "~21,799 ECG records / ~18,869 patients (from PTB-XL publication; not counted locally)",
+    "audit_reference": "docs/data-audit/ptbxl_ecg_audit.json",
+    "provenance": {
+      "official_name": "PTB-XL",
+      "official_source": "https://physionet.org/content/ptb-xl/1.0.3/",
+      "version_evidence": "1.0.3",
+      "license_file": "LICENSE.txt (Creative Commons Attribution 4.0)",
+      "changelog_files": [
+        "ptbxl_v102_changelog.txt",
+        "ptbxl_v103_changelog.txt"
+      ]
+    },
+    "waveform_existence": {
+      "metadata_rows_checked": 21799,
+      "missing_lr_waveforms": 0,
+      "missing_hr_waveforms": 0,
+      "sample_missing_lr_ecg_ids": [],
+      "sample_missing_hr_ecg_ids": [],
+      "complete": true
+    },
+    "waveform_file_counts": {
+      "records100_hea": 21799,
+      "records100_dat": 21799,
+      "records500_hea": 21799,
+      "records500_dat": 21799
+    },
+    "signal_loading_summary": {
+      "wfdb_available": true,
+      "sample_size": 96,
+      "reference_lead_order": [
+        "I",
+        "II",
+        "III",
+        "AVR",
+        "AVL",
+        "AVF",
+        "V1",
+        "V2",
+        "V3",
+        "V4",
+        "V5",
+        "V6"
+      ],
+      "preprocessing_for_12x1000_at_100hz": {
+        "filename_lr": "Already 12 leads \u00d7 1000 samples at 100 Hz \u2014 no resampling required.",
+        "filename_hr": "500 Hz \u00d7 5000 samples \u2014 downsample by factor 5 (e.g. decimation or anti-alias filter) to 100 Hz \u00d7 1000."
+      },
+      "records100_lr_sample_audit": {
+        "attempted": 96,
+        "load_ok": 96,
+        "shape_mismatch": 0,
+        "fs_mismatch": 0,
+        "lead_order_mismatch": 0,
+        "nan_values": 0,
+        "errors": []
+      }
+    },
+    "labels_and_splits_summary": {
+      "scp_statements_rows": 71,
+      "diagnostic_statements": 44,
+      "rhythm_column_documentation": "scp_statements.csv rhythm=1.0 marks rhythm statements (e.g. SR, AFIB).",
+      "sr_statement_meaning": "SR = sinus rhythm (SCP-ECG); aECG REFID MDC_ECG_RHY_SINUS_RHY in official table.",
+      "diagnostic_superclass_counts": {
+        "NORM": 9514,
+        "MI": 5469,
+        "STTC": 5235,
+        "HYP": 2649,
+        "CD": 4898
+      },
+      "records_with_multiple_superclasses": 5144,
+      "records_with_no_diagnostic_superclass": 411,
+      "records_with_SR_in_scp_codes": 16748,
+      "target_definitions": {
+        "official_multi_label_superclass": {
+          "description": "Five diagnostic superclasses NORM, MI, STTC, CD, HYP via scp_codes + scp_statements diagnostic_class.",
+          "source": "example_physionet.py and PTB-XL publication"
+        },
+        "notebook_task": {
+          "description": "Independent binary heads per superclass (multi-label).",
+          "source": "data/datasets/ecg-ptb-xl.ipynb"
+        },
+        "medshield_sinus_rhythm_proxy": {
+          "description": "Repository contract: normal sinus rhythm (SNOMED 426783006) vs pathological superclasses MI/STTC. Operational mapping for audit counts: SR present in scp_codes AND no MI/STTC superclass vs MI or STTC superclass present. NOT validated heart-disease diagnosis.",
+          "source": "README.md, backend/app/models/ml_models.py ModelVersion.target_definition",
+          "snomed_in_ptbxl_csv": false,
+          "proxy_class_counts": {
+            "proxy_positive_sr_without_mi_sttc": 10168,
+            "proxy_negative_mi_or_sttc_superclass": 9365,
+            "proxy_ambiguous_other": 2266
+          }
+        }
+      },
+      "split_feasibility": {
+        "unique_patient_id": 18869,
+        "total_ecg_records": 21799,
+        "duplicate_ecg_id_rows": 0,
+        "strat_fold_distribution": {
+          "1": 2175,
+          "2": 2181,
+          "3": 2192,
+          "4": 2174,
+          "5": 2174,
+          "6": 2173,
+          "7": 2176,
+          "8": 2173,
+          "9": 2183,
+          "10": 2198
+        },
+        "patients_with_records_in_multiple_folds": 0,
+        "official_fold10_holdout_patient_overlap_with_other_folds": 0,
+        "recommended_strategy": {
+          "primary": "Patient-level split by patient_id with stratification on aggregated labels (deterministic seed 42).",
+          "official_baseline": "strat_fold != 10 train/val, strat_fold == 10 test (matches example_physionet.py) \u2014 document patient leakage.",
+          "test_fold_for_model_selection": "Forbidden \u2014 hold out fold 10 (or patient test partition) for final evaluation only.",
+          "manifest_path": "data/manifests/ptbxl_patient_split_seed42.json"
+        }
+      }
+    },
     "target_definitions": {
       "notebook_primary_task": "Multi-label diagnostic-superclass classification (NORM / MI / STTC / CD / HYP) with five independent binary sigmoid heads (BCEWithLogitsLoss).",
       "repository_proxy_task_documentation": "README.md and backend ModelVersion default target_definition describe a separate binary proxy: normal sinus rhythm (SNOMED 426783006) vs pathological superclasses (documented as MI, STTC). This SNOMED code was NOT found in ecg-ptb-xl.ipynb text.",
-      "task_category": "Diagnostic statement / superclass coding (rhythm vs structural disease tasks are distinct). Neither task equals validated clinical heart-disease ground truth."
+      "verified_label_mappings": {
+        "official_multi_label_superclass": {
+          "description": "Five diagnostic superclasses NORM, MI, STTC, CD, HYP via scp_codes + scp_statements diagnostic_class.",
+          "source": "example_physionet.py and PTB-XL publication"
+        },
+        "notebook_task": {
+          "description": "Independent binary heads per superclass (multi-label).",
+          "source": "data/datasets/ecg-ptb-xl.ipynb"
+        },
+        "medshield_sinus_rhythm_proxy": {
+          "description": "Repository contract: normal sinus rhythm (SNOMED 426783006) vs pathological superclasses MI/STTC. Operational mapping for audit counts: SR present in scp_codes AND no MI/STTC superclass vs MI or STTC superclass present. NOT validated heart-disease diagnosis.",
+          "source": "README.md, backend/app/models/ml_models.py ModelVersion.target_definition",
+          "snomed_in_ptbxl_csv": false,
+          "proxy_class_counts": {
+            "proxy_positive_sr_without_mi_sttc": 10168,
+            "proxy_negative_mi_or_sttc_superclass": 9365,
+            "proxy_ambiguous_other": 2266
+          }
+        }
+      }
     },
-    "resampling_feasibility_if_data_added": "PTB-XL provides 500 Hz and 100 Hz releases; downsampling 500 Hz 10 s traces to 100 Hz yields 12 x 1000 tensors IF metadata fs and sig_len fields confirm duration and lead layout.",
-    "verdict": "BLOCKED",
-    "verdict_reason": "BLOCKED \u2014 PTB-XL metadata CSVs and waveform signal files (.hea, .dat) are absent from the repository under data/ (verified by extension search)."
+    "verdicts_11b": {
+      "PTBXL_installation_completeness": "GO",
+      "ECG_signal_loading": "GO",
+      "preprocessing_12x1000_at_100hz": "GO",
+      "ECG_target_validity": "CONDITIONAL_GO",
+      "patient_independent_evaluation_feasibility": "CONDITIONAL_GO",
+      "ECG_only_research_readiness": "GO",
+      "multimodal_GAT_readiness": "BLOCKED"
+    }
   },
   "nbme_internal_linkage": {
     "patient_notes_unique_pn_num": 42146,

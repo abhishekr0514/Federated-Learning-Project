@@ -2,6 +2,19 @@
 requires = ["setuptools>=65.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["backend*", "ml*", "privacy*", "fl*"]
+exclude = [
+    "tests*",
+    "data*",
+    "frontend*",
+    "deployment*",
+    "docs*",
+    "scripts*",
+    "storage*",
+]
+
 [project]
 name = "medshield-fl"
 version = "0.1.0"

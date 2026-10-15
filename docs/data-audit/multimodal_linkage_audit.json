@@ -1,0 +1,165 @@
+{
+  "audit_id": "medshield.multimodal_linkage_audit",
+  "audit_version": "1.0.0",
+  "audit_timestamp_utc": "2026-10-15T15:00:00Z",
+  "phase": "Prompt 16 read-only feasibility audit",
+  "training_conducted": false,
+  "datasets_joined": false,
+  "raw_datasets_modified": false,
+  "checksum_verification": {
+    "data/datasets_files_all_match_dataset_inventory_json": true,
+    "ptbxl_database_csv_sha256_matches_prompt_11b_manifest": true,
+    "verified_at_audit": "2026-10-15T15:00:00Z"
+  },
+  "linkage_requirements_minimum_evidence": {
+    "patient_or_encounter_key_documented": "Official schema defining stable subject or encounter identifier shared across modalities",
+    "provenance_and_license": "Documented source, DUA, and permitted use stored with project",
+    "temporal_alignment": "Timestamps or encounter windows documented when label depends on co-temporal observations",
+    "shared_target_definition": "Single label protocol with inclusion/exclusion rules and scientific audit trail",
+    "patient_independent_splits": "Group by subject id; no cross-split leakage",
+    "anti_patterns_not_evidence": [
+      "Similar column names without shared keys",
+      "Matching row counts or class balance",
+      "Demographic distribution similarity",
+      "Numeric identifier coincidence across unrelated cohorts",
+      "Manual index alignment or random pairing"
+    ]
+  },
+  "local_cohorts": {
+    "ptb_xl_1_0_3": {
+      "path": "data/raw/ptb-xl/",
+      "present": true,
+      "ecg_records": 21799,
+      "unique_patient_id": 18869,
+      "metadata_columns": [
+        "ecg_id",
+        "patient_id",
+        "age",
+        "sex",
+        "height",
+        "weight",
+        "recording_date",
+        "report",
+        "scp_codes",
+        "strat_fold",
+        "filename_lr",
+        "filename_hr"
+      ],
+      "clinical_text_in_cohort": "ECG machine/human reports in ptbxl_database.csv (same ecg_id); not NBME-style notes",
+      "labels": "SCP statement codes / superclasses (ECG interpretation proxy)",
+      "linkage_keys_available": ["ecg_id", "patient_id"],
+      "crosswalk_to_cardio_or_nbme": "none"
+    },
+    "cardio_train_csv": {
+      "path": "data/datasets/cardio_train.csv",
+      "rows": 70000,
+      "unique_id": 70000,
+      "id_range_integer": "0-99999 (70000 observed)",
+      "columns": [
+        "id",
+        "age",
+        "gender",
+        "height",
+        "weight",
+        "ap_hi",
+        "ap_lo",
+        "cholesterol",
+        "gluc",
+        "smoke",
+        "alco",
+        "active",
+        "cardio"
+      ],
+      "labels": "cardio binary survey/screening outcome (not verified clinical ground truth)",
+      "linkage_keys_available": ["id"],
+      "crosswalk_to_ptb_or_nbme": "none"
+    },
+    "nbme_clinical_nlp": {
+      "paths": [
+        "data/datasets/patient_notes.csv",
+        "data/datasets/features.csv",
+        "data/datasets/train.csv"
+      ],
+      "note_rows": 42146,
+      "unique_pn_num": 42146,
+      "unique_case_num": 10,
+      "internal_join_keys": ["pn_num", "feature_num", "case_num"],
+      "labels": "Character-span phrase location for concepts (not CVD diagnosis)",
+      "crosswalk_to_ptb_or_cardio": "none"
+    }
+  },
+  "coincidence_analysis": {
+    "cardio_id_vs_ptb_patient_id_string_overlap_count": 13181,
+    "verdict": "NOT_LINKAGE_EVIDENCE",
+    "rationale": "Independent cohorts use unrelated integer namespaces. Large overlap is expected by range collision (cardio ids 0-99999 vs ~19k PTB patients). No documented crosswalk, provenance tie, or encounter timestamps."
+  },
+  "candidate_sources": {
+    "local_ptb_xl_nbme_cardio_triad": {
+      "modalities_present_locally": ["ECG", "tabular_survey", "nlp_phrase_task"],
+      "genuine_cross_cohort_linkage_verified": false,
+      "shared_target_feasible": false,
+      "verdict": "BLOCKED"
+    },
+    "ptb_xl_internal_ecg_plus_report": {
+      "linkage_key": "ecg_id (encounter-level ECG record)",
+      "modalities": ["12-lead waveform", "report text field"],
+      "shared_target_candidates": ["scp_codes / DATA_CONTRACT ECG superclass task"],
+      "medshield_three_modality_contract_match": false,
+      "notes": "Does not provide NBME notes or cardio_train tabular schema; research path distinct from MedShieldDiagnosticNet local triad",
+      "verdict_two_modality_ecg_text": "CONDITIONAL_GO",
+      "verdict_three_modality_gat_local": "BLOCKED"
+    },
+    "mimic_iv_ecg_plus_mimic_iv": {
+      "local_install_present": false,
+      "official_documentation_cited_in_repo": true,
+      "official_sources": [
+        "https://physionet.org/content/mimic-iv-ecg/1.0/",
+        "https://physionet.org/content/mimic-iv/2.2/",
+        "https://physionet.org/content/mimic-iv-note/2.2/"
+      ],
+      "access": "PhysioNet credentialed access + CITI + DUA; not verified as granted for this workspace",
+      "expected_linkage_keys": "subject_id / hadm_id / study_id (per MIMIC documentation — not verified locally)",
+      "modalities_if_authorized": ["ECG", "structured hospital data", "clinical notes"],
+      "shared_target_feasibility": "UNVERIFIED until credentialing and local schema audit",
+      "verdict": "BLOCKED locally; CONDITIONAL_GO if credentialed download and linkage audit pass"
+    },
+    "other_sources": {
+      "status": "UNVERIFIED",
+      "note": "No additional linked multimodal cohort installed under data/; no automatic download performed in Prompt 16"
+    }
+  },
+  "decision_matrix": {
+    "ecg_text_linkage_cross_local_cohorts": {
+      "verdict": "BLOCKED",
+      "evidence": "PTB-XL (German ECG cohort) vs NBME (US licensing exam notes); no shared key; incompatible tasks"
+    },
+    "ecg_tabular_linkage_cross_local_cohorts": {
+      "verdict": "BLOCKED",
+      "evidence": "PTB-XL vs cardio_train.csv; no crosswalk; numeric id overlap is coincidental; incompatible labels"
+    },
+    "text_tabular_linkage_cross_local_cohorts": {
+      "verdict": "BLOCKED",
+      "evidence": "NBME pn_num vs cardio id; unrelated domains; no documented join"
+    },
+    "shared_target_validity_multimodal_local": {
+      "verdict": "BLOCKED",
+      "evidence": "Three distinct supervision types (SCP/ECG proxy, survey cardio, phrase spans); no unified clinically audited target"
+    },
+    "patient_independent_evaluation_feasibility": {
+      "verdict": "CONDITIONAL_GO",
+      "evidence": "Per-modality splits documented (PTB patient_id, cardio id, NBME pn_num); multimodal joint eval blocked"
+    },
+    "two_modality_research_readiness": {
+      "verdict": "CONDITIONAL_GO",
+      "evidence": "Single-modality and within-PTB-XL ECG+report feasible; cross-dataset two-modality pairs blocked"
+    },
+    "three_modality_gat_training_readiness": {
+      "verdict": "BLOCKED",
+      "evidence": "No verified same-patient/co-encounter triplets across ECG+NBME+cardio; ADR-004; DATA_CONTRACT linkage rules"
+    }
+  },
+  "recommended_research_path": "A",
+  "recommended_path_detail": "Continue separate ECG-only (PTB-XL), tabular-only (cardio_train), and text-only (NBME) research until authorized linked cohort (e.g. MIMIC-IV-ECG + MIMIC-IV + MIMIC-IV-Note) passes a follow-on local install audit.",
+  "smallest_next_step": "Complete PhysioNet credentialing and DUA for MIMIC-IV-ECG; after approved local install, run Prompt 16B install-linkage audit on subject_id/hadm_id joins without committing PHI.",
+  "production_inference_changed": false
+}

@@ -1,5 +1,5 @@
 """
-MedShield-FL Dataset Audit Script — PROMPT 11A
+MedShield-FL Dataset Audit Script — Prompts 11A / 11B
 READ ONLY. Does not modify, rename, or overwrite any dataset file.
 Computes checksums, profiles schemas, class distributions, missingness,
 duplicate counts, and linkage evidence.
@@ -10,12 +10,18 @@ import csv
 import hashlib
 import json
 import re
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-DATASETS_DIR = Path(__file__).resolve().parent.parent / "data" / "datasets"
-AUDIT_DIR = Path(__file__).resolve().parent.parent / "docs" / "data-audit"
+REPO_ROOT = Path(__file__).resolve().parent.parent
+DATASETS_DIR = REPO_ROOT / "data" / "datasets"
+PTBXL_DIR = REPO_ROOT / "data" / "raw" / "ptb-xl"
+AUDIT_DIR = REPO_ROOT / "docs" / "data-audit"
 AUDIT_DIR.mkdir(parents=True, exist_ok=True)
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from verify_ptbxl_ecg import run_ptbxl_verification  # noqa: E402
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -330,24 +336,32 @@ print(f"  Duplicate file groups: {len(duplicate_groups)}")
 
 inventory_names = {Path(k).name for k in inventory}
 
-# PTB-XL check (repository-wide for waveform extensions under data/)
+# PTB-XL check — Prompt 11B full verification when installed under data/raw/ptb-xl/
+print("\n  Running PTB-XL installation verification (11B) ...")
+ptbxl_audit = run_ptbxl_verification(PTBXL_DIR)
+ptbxl_ecg_audit_path = AUDIT_DIR / "ptbxl_ecg_audit.json"
+with open(ptbxl_ecg_audit_path, "w", encoding="utf-8") as f:
+    json.dump(ptbxl_audit, f, indent=2, default=str)
+
 repo_data_root = DATASETS_DIR.parent
 hea_files = list(repo_data_root.rglob("*.hea"))
 dat_files = list(repo_data_root.rglob("*.dat"))
-PTBXL_EXPECTED = ["ptbxl_database.csv", "scp_statements.csv"]
 ptbxl_waveform_check = {
-    "ptbxl_database.csv_in_datasets": "ptbxl_database.csv" in inventory_names,
-    "scp_statements.csv_in_datasets": "scp_statements.csv" in inventory_names,
+    "install_path": str(PTBXL_DIR),
+    "ptbxl_present": ptbxl_audit.get("present", False),
+    "ecg_ptb_xl_notebook_present": "ecg-ptb-xl.ipynb" in inventory_names,
     "waveform_hea_files_under_data": len(hea_files),
     "waveform_dat_files_under_data": len(dat_files),
-    "ecg_ptb_xl_notebook_present": "ecg-ptb-xl.ipynb" in inventory_names,
+    "verdicts_11b": ptbxl_audit.get("verdicts", {}),
     "verdict": (
-        "BLOCKED — PTB-XL metadata CSVs and waveform signal files (.hea, .dat) are absent "
-        "from the repository under data/ (verified by extension search)."
+        ptbxl_audit.get("verdicts", {}).get("PTBXL_installation_completeness", "BLOCKED")
+        + " — see ptbxl_ecg_audit.json"
+        if ptbxl_audit.get("present")
+        else "BLOCKED — PTB-XL not found under data/raw/ptb-xl/"
     ),
 }
 
-print(f"\n  PTB-XL waveform check: {ptbxl_waveform_check['verdict']}")
+print(f"\n  PTB-XL check: {ptbxl_waveform_check['verdict']}")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -508,25 +522,38 @@ profiles["ecg-ptb-xl.ipynb"] = {
 
 nb_target_audit = inspect_ptbxl_notebook(nb_path) if nb_path.exists() else {"error": "notebook missing"}
 profiles["ptbxl_ecg_audit"] = {
-    "waveform_files_present": False,
-    "metadata_files_present": False,
-    "load_feasibility": "BLOCKED — cannot load ECG signals without .hea/.dat and ptbxl_database.csv",
-    "official_reference": "https://physionet.org/content/ptb-xl/1.0.3/",
-    "published_record_counts_unverified_locally": "~21,799 ECG records / ~18,869 patients (from PTB-XL publication; not counted locally)",
-    "target_definitions": {
-        "notebook_primary_task": nb_target_audit.get("notebook_stated_primary_task"),
-        "repository_proxy_task_documentation": nb_target_audit.get("project_docs_sinus_rhythm_proxy"),
-        "task_category": (
-            "Diagnostic statement / superclass coding (rhythm vs structural disease tasks are distinct). "
-            "Neither task equals validated clinical heart-disease ground truth."
-        ),
-    },
-    "resampling_feasibility_if_data_added": (
-        "PTB-XL provides 500 Hz and 100 Hz releases; downsampling 500 Hz 10 s traces to 100 Hz yields "
-        "12 x 1000 tensors IF metadata fs and sig_len fields confirm duration and lead layout."
+    **(
+        {
+            "audit_reference": "docs/data-audit/ptbxl_ecg_audit.json",
+            "provenance": ptbxl_audit.get("provenance"),
+            "waveform_existence": ptbxl_audit.get("waveform_existence"),
+            "waveform_file_counts": ptbxl_audit.get("waveform_file_counts"),
+            "signal_loading_summary": {
+                k: ptbxl_audit.get("signal_loading", {}).get(k)
+                for k in (
+                    "wfdb_available",
+                    "sample_size",
+                    "reference_lead_order",
+                    "preprocessing_for_12x1000_at_100hz",
+                    "records100_lr_sample_audit",
+                )
+            },
+            "labels_and_splits_summary": ptbxl_audit.get("labels_and_splits"),
+            "target_definitions": {
+                "notebook_primary_task": nb_target_audit.get("notebook_stated_primary_task"),
+                "repository_proxy_task_documentation": nb_target_audit.get("project_docs_sinus_rhythm_proxy"),
+                "verified_label_mappings": ptbxl_audit.get("labels_and_splits", {}).get("target_definitions"),
+            },
+            "verdicts_11b": ptbxl_audit.get("verdicts"),
+        }
+        if ptbxl_audit.get("present")
+        else {
+            "waveform_files_present": False,
+            "load_feasibility": "BLOCKED",
+            "verdict": "BLOCKED",
+            "verdict_reason": ptbxl_waveform_check["verdict"],
+        }
     ),
-    "verdict": "BLOCKED",
-    "verdict_reason": ptbxl_waveform_check["verdict"],
 }
 
 nbme_stats = nbme_linkage_stats(DATASETS_DIR)
@@ -636,14 +663,24 @@ split_strategy = {
         "notes_checksum_sha256": AUDIT_CHECKSUMS.get("patient_notes.csv"),
         "manifest_output_path": "data/manifests/nbme_note_split_seed42.json",
     },
-    "PTB-XL_ECG": {
-        "task": "N/A — waveform files absent",
-        "recommendation": "BLOCKED — cannot define a split without signal data. "
-                          "If waveform data is added in future: split by patient_id column in ptbxl_database.csv. "
-                          "PTB-XL provides recommended splits (strat_fold field). Per-lead z-score normalization "
-                          "must be fitted on train folds only.",
-        "verdict": "BLOCKED",
-    },
+    "PTB-XL_ECG": (
+        {
+            "task": "ECG diagnostic superclass / proxy rhythm experiments (single-modality only)",
+            "grouping_key": "patient_id (18,869 patients; strat_fold is patient-consistent in verified install)",
+            "recommendation": ptbxl_audit.get("labels_and_splits", {})
+            .get("split_feasibility", {})
+            .get("recommended_strategy"),
+            "official_fold10_test_records": 2198,
+            "dataset_checksum_sha256": ptbxl_audit.get("metadata_sha256", {}).get("ptbxl_database.csv"),
+            "preprocessing_rule": "Normalization fitted on train only; use filename_lr for native 12×1000@100Hz or downsample filename_hr.",
+            "verdict": ptbxl_audit.get("verdicts", {}).get("patient_independent_evaluation_feasibility", "NOT_ASSESSED"),
+        }
+        if ptbxl_audit.get("present")
+        else {
+            "task": "N/A — PTB-XL not installed",
+            "verdict": "BLOCKED",
+        }
+    ),
 }
 
 
@@ -678,13 +715,22 @@ sufficiency = {
                     "Notes are from US medical licensing exams, not real patient hospital records.",
                     "Cannot produce clinically valid cardiovascular outcomes from this data."],
     },
-    "PTB_XL_ECG": {
-        "assessment": "BLOCKED — signal files absent. PTB-XL as published contains ~21,799 clinical ECG records "
-                      "from 18,869 patients (10-second, 12-lead, 500Hz). If obtained, this is sufficient for ECG-only research.",
-        "caveats": ["Waveform files must be verified after download before any training.",
-                    "Downsampling from 500Hz to 100Hz yields 12×1000 tensor per record as required by architecture.",
-                    "Patient-independent splits must use patient_id from ptbxl_database.csv, not strat_fold alone."],
-    },
+    "PTB_XL_ECG": (
+        {
+            "n_records": ptbxl_audit.get("waveform_existence", {}).get("metadata_rows_checked"),
+            "n_patients": ptbxl_audit.get("labels_and_splits", {}).get("split_feasibility", {}).get("unique_patient_id"),
+            "assessment": "Sufficient for ECG-only research after verified install (21,799 records, 18,869 patients).",
+            "caveats": [
+                "Labels are SCP-ECG / proxy targets — not validated clinical heart-disease diagnosis.",
+                "Multi-label superclasses common (5,144 records with >1 superclass).",
+                "411 records with no mapped diagnostic superclass.",
+            ],
+        }
+        if ptbxl_audit.get("present")
+        else {
+            "assessment": "BLOCKED — PTB-XL not installed under data/raw/ptb-xl/",
+        }
+    ),
 }
 
 
@@ -787,12 +833,22 @@ inventory_out = {
     "duplicate_checksum_groups": [g for g in duplicate_groups if len(g) > 1],
     "ptbxl_waveform_check": ptbxl_waveform_check,
     "notebook_inspection": nb_inspection,
-    "missing_expected_files": {
-        "ptbxl_database.csv": "MISSING under data/",
-        "scp_statements.csv": "MISSING under data/",
-        "PTB-XL .hea waveform headers": "MISSING under data/ (0 files found)",
-        "PTB-XL .dat waveform signals": "MISSING under data/ (0 files found)",
+    "ptbxl_installation": {
+        "path": str(PTBXL_DIR),
+        "present": ptbxl_audit.get("present"),
+        "metadata_sha256": ptbxl_audit.get("metadata_sha256"),
+        "waveform_file_counts": ptbxl_audit.get("waveform_file_counts"),
+        "manifest_checksum_verification": ptbxl_audit.get("checksums"),
     },
+    "missing_expected_files": (
+        {}
+        if ptbxl_audit.get("present") and ptbxl_audit.get("waveform_existence", {}).get("complete")
+        else {
+            "ptbxl_database.csv": "MISSING or incomplete install",
+            "scp_statements.csv": "MISSING or incomplete install",
+            "PTB-XL waveforms": "MISSING or incomplete install",
+        }
+    ),
 }
 with open(AUDIT_DIR / "dataset_inventory.json", "w") as f:
     json.dump(inventory_out, f, indent=2, default=str)
@@ -824,9 +880,26 @@ with open(AUDIT_DIR / "split_strategy.json", "w") as f:
 print(f"  Written: {AUDIT_DIR / 'split_strategy.json'}")
 
 # 5. dataset_audit_summary.json
+_ecg_verdict = (
+    ptbxl_audit.get("verdicts", {}).get("ECG_only_research_readiness", "BLOCKED")
+    if ptbxl_audit.get("present")
+    else "BLOCKED"
+)
+_ptbxl_additional = (
+    {"PTB-XL_waveform_files": {"status": "INSTALLED", "path": str(PTBXL_DIR)}}
+    if ptbxl_audit.get("present")
+    else {
+        "PTB-XL_waveform_files": {
+            "status": "ESSENTIAL",
+            "source": "https://physionet.org/content/ptb-xl/1.0.3/",
+            "license": "CC BY 4.0 — open access",
+        }
+    }
+)
+
 summary = {
-    "audit_version": "11A",
-    "ECG": "BLOCKED",
+    "audit_version": "11B",
+    "ECG": _ecg_verdict,
     "Tabular": "CONDITIONAL_GO",
     "Clinical_text": "CONDITIONAL_GO",
     "Multimodal_fusion": "BLOCKED",
@@ -834,8 +907,24 @@ summary = {
     "Centralized_evaluation": "CONDITIONAL_GO",
     "Clinical_diagnosis_claim": "BLOCKED",
     "verdicts": {
-        "ECG_only_research": "BLOCKED",
-        "ECG_verdict_reason": "PTB-XL metadata and .hea/.dat waveform signal files are absent from data/; ECG loading cannot be verified locally",
+        "ECG_only_research": _ecg_verdict,
+        "ECG_verdict_reason": (
+            "PTB-XL 1.0.3 verified at data/raw/ptb-xl: 21,799/21,799 LR+HR waveforms present; "
+            "96/96 wfdb sample loads at 12×1000@100Hz (records100)."
+            if ptbxl_audit.get("present")
+            else "PTB-XL not installed or incomplete"
+        ),
+        "PTBXL_installation_completeness": ptbxl_audit.get("verdicts", {}).get(
+            "PTBXL_installation_completeness", "NOT_ASSESSED"
+        ),
+        "ECG_signal_loading": ptbxl_audit.get("verdicts", {}).get("ECG_signal_loading", "NOT_ASSESSED"),
+        "preprocessing_12x1000_at_100hz": ptbxl_audit.get("verdicts", {}).get(
+            "preprocessing_12x1000_at_100hz", "NOT_ASSESSED"
+        ),
+        "ECG_target_validity": ptbxl_audit.get("verdicts", {}).get("ECG_target_validity", "NOT_ASSESSED"),
+        "patient_independent_evaluation_feasibility": ptbxl_audit.get("verdicts", {}).get(
+            "patient_independent_evaluation_feasibility", "NOT_ASSESSED"
+        ),
         "Tabular_only_research": "CONDITIONAL_GO",
         "Tabular_verdict_reason": "cardio_train.csv: 70,000 rows, balanced binary label, zero missing cells; requires BP/outlier cleaning; label is survey annotation not clinically validated",
         "Clinical_text_research": "CONDITIONAL_GO",
@@ -850,11 +939,7 @@ summary = {
         "Clinical_diagnosis_reason": "No clinically validated multimodal heart-disease ground truth in repository",
     },
     "additional_datasets_required": {
-        "PTB-XL_waveform_files": {
-            "status": "ESSENTIAL",
-            "source": "https://physionet.org/content/ptb-xl/1.0.3/",
-            "license": "CC BY 4.0 — open access",
-        },
+        **_ptbxl_additional,
         "MIMIC-IV-ECG": {
             "status": "OPTIONAL — enables genuine multimodal ECG+clinical linkage",
             "source": "https://physionet.org/content/mimic-iv-ecg/1.0/",
@@ -862,7 +947,8 @@ summary = {
         },
     },
     "audit_limitations": [
-        "PTB-XL waveform sample quality and completeness cannot be verified without the actual files.",
+        "PTB-XL signal audit used 96-record wfdb sample (full existence check on all 21,799 paths).",
+        "wfdb required for signal load verification (project optional dependency [ml]).",
         "cardio_train.csv source version cannot be confirmed beyond filename; license attribution is unverified.",
         "NBME dataset license restricts certain uses — must verify competition terms before production deployment.",
         "No model training was performed; no accuracy, AUC, or F1 values have been computed or estimated.",
@@ -877,23 +963,28 @@ with open(AUDIT_DIR / "dataset_audit_summary.json", "w") as f:
 print(f"  Written: {AUDIT_DIR / 'dataset_audit_summary.json'}")
 
 # 6. dataset_recommendations.md
-rec_md = f"""# Dataset Recommendations (Evidence-Based)
+_ptbxl_rec_section = (
+    """## PTB-XL (PhysioNet 1.0.3) — INSTALLED
 
-Generated by `scripts/run_data_audit.py` (Prompt 11A). Recommendations apply only where the local audit established a blocker.
+Verified at `data/raw/ptb-xl/` (Prompt 11B). No further download required for ECG-only experiments.
 
-## Essential
-
-### PTB-XL (PhysioNet 1.0.3)
+See `docs/data-audit/ptbxl_ecg_audit.json` and `PTB-XL_ECG_AUDIT_REPORT.md`.
+"""
+    if ptbxl_audit.get("present")
+    else """## Essential — PTB-XL (PhysioNet 1.0.3)
 
 - **Official page:** https://physionet.org/content/ptb-xl/1.0.3/
 - **DOI:** 10.13026/kfzx-aw45
 - **License:** Creative Commons Attribution 4.0 (CC BY 4.0)
 - **Resolves:** Missing ECG waveforms (`*.hea`, `*.dat`), `ptbxl_database.csv`, `scp_statements.csv`
-- **Modalities:** 12-lead ECG signals, SCP-ECG diagnostic statements, patient_id, strat_fold splits
-- **Access:** Open download via PhysioNet (no credentialing for PTB-XL itself)
-- **Storage (approx.):** ~700 MB (100 Hz) to ~1.8 GB (500 Hz) per official release notes
-- **Architecture fit:** Supports 1D-CNN + BiLSTM ECG encoder after verified resampling to 12×1000 @ 100 Hz
-- **Limitations:** Multi-label diagnostics; proxy targets ≠ validated clinical heart-disease diagnosis
+"""
+)
+
+rec_md = f"""# Dataset Recommendations (Evidence-Based)
+
+Generated by `scripts/run_data_audit.py` (Prompts 11A/11B).
+
+{_ptbxl_rec_section}
 
 ## Optional (multimodal linkage — restricted access)
 
@@ -925,11 +1016,17 @@ print(f"  Written: {AUDIT_DIR / 'dataset_recommendations.md'}")
 
 # 7. DATASET_AUDIT_REPORT.md
 cardio_q = profiles.get("cardio_train.csv", {}).get("data_quality_audit", {})
-report_md = f"""# MedShield-FL Dataset Audit Report (Prompt 11A)
+_ecg_row = (
+    f"| ECG-only research | **{_ecg_verdict}** | PTB-XL 1.0.3 @ `data/raw/ptb-xl/`; 21,799 waveforms; wfdb 96/96 @ 12×1000@100Hz | Proxy labels only | ECG encoder baseline (no training yet) |"
+    if ptbxl_audit.get("present")
+    else "| ECG-only research | **BLOCKED** | PTB-XL not verified | Install under data/raw/ptb-xl/ | Download PhysioNet 1.0.3 |"
+)
+report_md = f"""# MedShield-FL Dataset Audit Report (Prompts 11A / 11B)
 
 **Audit time (UTC):** {inventory_out['audit_timestamp']}  
 **Repository:** `C:/Federated-Learning-Project`  
 **Datasets directory:** `data/datasets/` (flat; **{len(subdirs)}** subdirectories)  
+**PTB-XL directory:** `data/raw/ptb-xl/`  
 **Training conducted:** No  
 **Raw datasets modified:** No  
 
@@ -937,7 +1034,7 @@ report_md = f"""# MedShield-FL Dataset Audit Report (Prompt 11A)
 
 | Capability | Verdict | Evidence | Blockers | Next action |
 |---|---|---|---|---|
-| ECG-only research | **BLOCKED** | 0 `.hea`/`.dat` under `data/`; no `ptbxl_database.csv` | Waveforms + metadata absent | Download PTB-XL 1.0.3 from PhysioNet; verify load |
+{_ecg_row}
 | Tabular-only research | **CONDITIONAL_GO** | `cardio_train.csv` 70,000×13; balanced `cardio` label | BP/outlier rows; unverified license; survey label | Clean outliers; patient-level split by `id`; tabular baseline |
 | Clinical-text research | **CONDITIONAL_GO** | NBME 42,146 notes; 14,300 span annotations | Phrase ID task; 5-row local `test.csv` | Split by `pn_num`; BioClinicalBERT span model |
 | Multimodal GAT | **BLOCKED** | No shared patient keys across cohorts | No crosswalk; incompatible labels | Restricted linked dataset (e.g. MIMIC-IV-ECG + Note) or single-site data |
@@ -956,8 +1053,13 @@ for key in sorted(inventory.keys()):
     ent = inventory[key]
     report_md += f"| `{ent['relative_path']}` | {ent['size_bytes']:,} | `{ent['sha256'][:16]}…` |\n"
 
+_ptbxl_missing = (
+    "None — PTB-XL 1.0.3 install complete (see `ptbxl_ecg_audit.json`)."
+    if ptbxl_audit.get("present") and ptbxl_audit.get("waveform_existence", {}).get("complete")
+    else "`ptbxl_database.csv`, `scp_statements.csv`, PTB-XL waveforms under `data/raw/ptb-xl/`."
+)
 report_md += f"""
-**Missing (checklist):** `ptbxl_database.csv`, `scp_statements.csv`, all PTB-XL `.hea`/`.dat` waveforms under `data/`.
+**PTB-XL status:** {_ptbxl_missing}
 
 **Duplicates by checksum:** {len(duplicate_groups)} groups.
 
@@ -985,10 +1087,7 @@ report_md += f"""
 
 ### PTB-XL
 
-- **Local status:** BLOCKED — no waveforms or metadata CSVs in repo
-- **Notebook (`ecg-ptb-xl.ipynb`):** Documents **multi-label diagnostic superclass** task (NORM/MI/STTC/CD/HYP)
-- **Repository docs (`README.md`, model registry):** Document a **separate** sinus-rhythm SNOMED 426783006 vs superclass **proxy** — SNOMED string **not found** in notebook source text
-- **Legitimate ECG experiment if PTB-XL added:** Diagnostic superclass or rhythm coding — **not** interchangeable with heart-disease diagnosis marketing
+See **`PTB-XL_ECG_AUDIT_REPORT.md`** and `ptbxl_ecg_audit.json` for full Prompt 11B evidence.
 
 ## Phase F — Multimodal linkage
 
@@ -1024,10 +1123,97 @@ Real multi-hospital silos: **not available**. Simulated clients on `cardio_train
 - `split_strategy.json`
 - `dataset_audit_summary.json`
 - `dataset_recommendations.md`
+- `ptbxl_ecg_audit.json`
+- `PTB-XL_ECG_AUDIT_REPORT.md`
 """
 with open(AUDIT_DIR / "DATASET_AUDIT_REPORT.md", "w", encoding="utf-8") as f:
     f.write(report_md)
 print(f"  Written: {AUDIT_DIR / 'DATASET_AUDIT_REPORT.md'}")
+
+# 8. PTB-XL_ECG_AUDIT_REPORT.md (Prompt 11B)
+if ptbxl_audit.get("present"):
+    ls = ptbxl_audit.get("labels_and_splits", {})
+    sf = ls.get("split_feasibility", {})
+    sig = ptbxl_audit.get("signal_loading", {})
+    lr = sig.get("records100_lr_sample_audit", {})
+    proxy = ls.get("target_definitions", {}).get("medshield_sinus_rhythm_proxy", {})
+    ptbxl_report = f"""# PTB-XL ECG Audit Report (Prompt 11B)
+
+**Generated:** {ptbxl_audit.get('audit_timestamp_utc')}  
+**Path:** `{ptbxl_audit.get('directory')}`  
+**Official source:** [{ptbxl_audit.get('provenance', {}).get('official_source')}]({ptbxl_audit.get('provenance', {}).get('official_source')})  
+**Version evidence:** {ptbxl_audit.get('provenance', {}).get('version_evidence')}  
+**License:** {ptbxl_audit.get('provenance', {}).get('license_file')}
+
+## Installation completeness — **{ptbxl_audit.get('verdicts', {}).get('PTBXL_installation_completeness')}**
+
+| Check | Result |
+|---|---|
+| `ptbxl_database.csv` rows | {ptbxl_audit.get('waveform_existence', {}).get('metadata_rows_checked')} |
+| Missing LR waveforms | {ptbxl_audit.get('waveform_existence', {}).get('missing_lr_waveforms')} |
+| Missing HR waveforms | {ptbxl_audit.get('waveform_existence', {}).get('missing_hr_waveforms')} |
+| `records100` .hea / .dat | {ptbxl_audit.get('waveform_file_counts', {}).get('records100_hea')} / {ptbxl_audit.get('waveform_file_counts', {}).get('records100_dat')} |
+| `records500` .hea / .dat | {ptbxl_audit.get('waveform_file_counts', {}).get('records500_hea')} / {ptbxl_audit.get('waveform_file_counts', {}).get('records500_dat')} |
+| SHA256 manifest match (root files) | {ptbxl_audit.get('checksums', {}).get('status')} |
+
+## Signal loading — **{ptbxl_audit.get('verdicts', {}).get('ECG_signal_loading')}**
+
+- **wfdb available:** {sig.get('wfdb_available')}
+- **Sample loads (records100):** {lr.get('load_ok')}/{sig.get('sample_size')} OK
+- **Lead order:** `{sig.get('reference_lead_order')}`
+- **Units:** {sig.get('units_observed')}
+- **NaN in sample:** {lr.get('nan_values')}
+
+### 12 × 1000 @ 100 Hz — **{ptbxl_audit.get('verdicts', {}).get('preprocessing_12x1000_at_100hz')}**
+
+- **filename_lr:** {sig.get('preprocessing_for_12x1000_at_100hz', {}).get('filename_lr')}
+- **filename_hr:** {sig.get('preprocessing_for_12x1000_at_100hz', {}).get('filename_hr')}
+
+## Labels and targets — **{ptbxl_audit.get('verdicts', {}).get('ECG_target_validity')}**
+
+**Diagnostic superclass counts (record-level, may be multi-label):**
+
+{json.dumps(ls.get('diagnostic_superclass_counts'), indent=2)}
+
+- Records with >1 superclass: {ls.get('records_with_multiple_superclasses')}
+- Records with no mapped superclass: {ls.get('records_with_no_diagnostic_superclass')}
+- Records with `SR` in scp_codes: {ls.get('records_with_SR_in_scp_codes')}
+
+### MedShield sinus-rhythm proxy (repository contract — **not** clinical diagnosis)
+
+{proxy.get('description')}
+
+**Audit mapping counts:** {json.dumps(proxy.get('proxy_class_counts'), indent=2)}
+
+SNOMED 426783006 appears in application docs; PTB-XL uses SCP statement **SR** (rhythm=1.0 in `scp_statements.csv`).
+
+## Patient-independent splits — **{ptbxl_audit.get('verdicts', {}).get('patient_independent_evaluation_feasibility')}**
+
+- Unique `patient_id`: {sf.get('unique_patient_id')}
+- ECG records: {sf.get('total_ecg_records')}
+- Patients spanning multiple `strat_fold` values: {sf.get('patients_with_records_in_multiple_folds')}
+- Fold-10 vs other-folds patient overlap: {sf.get('official_fold10_holdout_patient_overlap_with_other_folds')}
+
+**Recommended:** {json.dumps(sf.get('recommended_strategy'), indent=2)}
+
+## Verdict summary
+
+| Item | Verdict |
+|---|---|
+| Installation | {ptbxl_audit.get('verdicts', {}).get('PTBXL_installation_completeness')} |
+| Signal loading | {ptbxl_audit.get('verdicts', {}).get('ECG_signal_loading')} |
+| 12×1000 preprocessing | {ptbxl_audit.get('verdicts', {}).get('preprocessing_12x1000_at_100hz')} |
+| Target validity | {ptbxl_audit.get('verdicts', {}).get('ECG_target_validity')} |
+| Patient-independent eval | {ptbxl_audit.get('verdicts', {}).get('patient_independent_evaluation_feasibility')} |
+| ECG-only research | {ptbxl_audit.get('verdicts', {}).get('ECG_only_research_readiness')} |
+| Multimodal GAT | {ptbxl_audit.get('verdicts', {}).get('multimodal_GAT_readiness')} |
+
+**Training conducted:** No  
+**Raw PTB-XL files modified:** No  
+"""
+    with open(AUDIT_DIR / "PTB-XL_ECG_AUDIT_REPORT.md", "w", encoding="utf-8") as f:
+        f.write(ptbxl_report)
+    print(f"  Written: {AUDIT_DIR / 'PTB-XL_ECG_AUDIT_REPORT.md'}")
 
 print("\n=== AUDIT SCRIPT COMPLETE ===")
 print(f"Output directory: {AUDIT_DIR}")

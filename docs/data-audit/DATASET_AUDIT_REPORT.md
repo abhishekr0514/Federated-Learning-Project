@@ -1,8 +1,9 @@
-# MedShield-FL Dataset Audit Report (Prompt 11A)
+# MedShield-FL Dataset Audit Report (Prompts 11A / 11B)
 
-**Audit time (UTC):** 2026-10-15T09:07:47Z  
+**Audit time (UTC):** 2026-10-15T10:26:52Z  
 **Repository:** `C:/Federated-Learning-Project`  
 **Datasets directory:** `data/datasets/` (flat; **0** subdirectories)  
+**PTB-XL directory:** `data/raw/ptb-xl/`  
 **Training conducted:** No  
 **Raw datasets modified:** No  
 
@@ -10,7 +11,7 @@
 
 | Capability | Verdict | Evidence | Blockers | Next action |
 |---|---|---|---|---|
-| ECG-only research | **BLOCKED** | 0 `.hea`/`.dat` under `data/`; no `ptbxl_database.csv` | Waveforms + metadata absent | Download PTB-XL 1.0.3 from PhysioNet; verify load |
+| ECG-only research | **GO** | PTB-XL 1.0.3 @ `data/raw/ptb-xl/`; 21,799 waveforms; wfdb 96/96 @ 12×1000@100Hz | Proxy labels only | ECG encoder baseline (no training yet) |
 | Tabular-only research | **CONDITIONAL_GO** | `cardio_train.csv` 70,000×13; balanced `cardio` label | BP/outlier rows; unverified license; survey label | Clean outliers; patient-level split by `id`; tabular baseline |
 | Clinical-text research | **CONDITIONAL_GO** | NBME 42,146 notes; 14,300 span annotations | Phrase ID task; 5-row local `test.csv` | Split by `pn_num`; BioClinicalBERT span model |
 | Multimodal GAT | **BLOCKED** | No shared patient keys across cohorts | No crosswalk; incompatible labels | Restricted linked dataset (e.g. MIMIC-IV-ECG + Note) or single-site data |
@@ -32,7 +33,7 @@
 | `data/datasets/test.csv` | 141 | `212a67b8711a0e88…` |
 | `data/datasets/train.csv` | 761,246 | `364a046f54189ae6…` |
 
-**Missing (checklist):** `ptbxl_database.csv`, `scp_statements.csv`, all PTB-XL `.hea`/`.dat` waveforms under `data/`.
+**PTB-XL status:** None — PTB-XL 1.0.3 install complete (see `ptbxl_ecg_audit.json`).
 
 **Duplicates by checksum:** 0 groups.
 
@@ -60,10 +61,7 @@
 
 ### PTB-XL
 
-- **Local status:** BLOCKED — no waveforms or metadata CSVs in repo
-- **Notebook (`ecg-ptb-xl.ipynb`):** Documents **multi-label diagnostic superclass** task (NORM/MI/STTC/CD/HYP)
-- **Repository docs (`README.md`, model registry):** Document a **separate** sinus-rhythm SNOMED 426783006 vs superclass **proxy** — SNOMED string **not found** in notebook source text
-- **Legitimate ECG experiment if PTB-XL added:** Diagnostic superclass or rhythm coding — **not** interchangeable with heart-disease diagnosis marketing
+See **`PTB-XL_ECG_AUDIT_REPORT.md`** and `ptbxl_ecg_audit.json` for full Prompt 11B evidence.
 
 ## Phase F — Multimodal linkage
 
@@ -99,3 +97,5 @@ Real multi-hospital silos: **not available**. Simulated clients on `cardio_train
 - `split_strategy.json`
 - `dataset_audit_summary.json`
 - `dataset_recommendations.md`
+- `ptbxl_ecg_audit.json`
+- `PTB-XL_ECG_AUDIT_REPORT.md`

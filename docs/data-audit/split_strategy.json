@@ -32,8 +32,17 @@
     "manifest_output_path": "data/manifests/nbme_note_split_seed42.json"
   },
   "PTB-XL_ECG": {
-    "task": "N/A \u2014 waveform files absent",
-    "recommendation": "BLOCKED \u2014 cannot define a split without signal data. If waveform data is added in future: split by patient_id column in ptbxl_database.csv. PTB-XL provides recommended splits (strat_fold field). Per-lead z-score normalization must be fitted on train folds only.",
-    "verdict": "BLOCKED"
+    "task": "ECG diagnostic superclass / proxy rhythm experiments (single-modality only)",
+    "grouping_key": "patient_id (18,869 patients; strat_fold is patient-consistent in verified install)",
+    "recommendation": {
+      "primary": "Patient-level split by patient_id with stratification on aggregated labels (deterministic seed 42).",
+      "official_baseline": "strat_fold != 10 train/val, strat_fold == 10 test (matches example_physionet.py) \u2014 document patient leakage.",
+      "test_fold_for_model_selection": "Forbidden \u2014 hold out fold 10 (or patient test partition) for final evaluation only.",
+      "manifest_path": "data/manifests/ptbxl_patient_split_seed42.json"
+    },
+    "official_fold10_test_records": 2198,
+    "dataset_checksum_sha256": "7600de9c1b27d181d850b3c6038a35d7c3ddb6bb33b702e3a20252a6859d216b",
+    "preprocessing_rule": "Normalization fitted on train only; use filename_lr for native 12\u00d71000@100Hz or downsample filename_hr.",
+    "verdict": "CONDITIONAL_GO"
   }
 }

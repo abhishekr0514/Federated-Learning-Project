@@ -1,0 +1,200 @@
+{
+  "present": true,
+  "audit_timestamp_utc": "2026-10-15T10:26:43Z",
+  "directory": "C:\\Federated-Learning-Project\\data\\raw\\ptb-xl",
+  "provenance": {
+    "official_name": "PTB-XL",
+    "official_source": "https://physionet.org/content/ptb-xl/1.0.3/",
+    "version_evidence": "1.0.3",
+    "license_file": "LICENSE.txt (Creative Commons Attribution 4.0)",
+    "changelog_files": [
+      "ptbxl_v102_changelog.txt",
+      "ptbxl_v103_changelog.txt"
+    ]
+  },
+  "checksums": {
+    "status": "OK",
+    "root_file_checksums": {
+      "LICENSE.txt": {
+        "present": true,
+        "sha256_computed": "9a78e7f22742dde9f66ae235ec793ba2212019dc4d0ced75c4da09ced0b35fb2",
+        "sha256_manifest": "9a78e7f22742dde9f66ae235ec793ba2212019dc4d0ced75c4da09ced0b35fb2",
+        "matches_manifest": true
+      },
+      "ptbxl_database.csv": {
+        "present": true,
+        "sha256_computed": "7600de9c1b27d181d850b3c6038a35d7c3ddb6bb33b702e3a20252a6859d216b",
+        "sha256_manifest": "7600de9c1b27d181d850b3c6038a35d7c3ddb6bb33b702e3a20252a6859d216b",
+        "matches_manifest": true
+      },
+      "scp_statements.csv": {
+        "present": true,
+        "sha256_computed": "ad05b0b1fcae83bb1230755ad9cfc7c96f303feddc08a4a9ad5bdc9ca63bac8f",
+        "sha256_manifest": "ad05b0b1fcae83bb1230755ad9cfc7c96f303feddc08a4a9ad5bdc9ca63bac8f",
+        "matches_manifest": true
+      },
+      "example_physionet.py": {
+        "present": true,
+        "sha256_computed": "8de8392559989810d368053904e442eff162d1dadb8e76788e197e24c98fe81d",
+        "sha256_manifest": "8de8392559989810d368053904e442eff162d1dadb8e76788e197e24c98fe81d",
+        "matches_manifest": true
+      },
+      "RECORDS": {
+        "present": true,
+        "sha256_computed": "56d37274b0b02339e9c30bff8c9a9f2a6fb3cb2bb7bcd5d7c55355451d53896a",
+        "sha256_manifest": "56d37274b0b02339e9c30bff8c9a9f2a6fb3cb2bb7bcd5d7c55355451d53896a",
+        "matches_manifest": true
+      }
+    }
+  },
+  "metadata_sha256": {
+    "ptbxl_database.csv": "7600de9c1b27d181d850b3c6038a35d7c3ddb6bb33b702e3a20252a6859d216b",
+    "scp_statements.csv": "ad05b0b1fcae83bb1230755ad9cfc7c96f303feddc08a4a9ad5bdc9ca63bac8f"
+  },
+  "waveform_file_counts": {
+    "records100_hea": 21799,
+    "records100_dat": 21799,
+    "records500_hea": 21799,
+    "records500_dat": 21799
+  },
+  "waveform_existence": {
+    "metadata_rows_checked": 21799,
+    "missing_lr_waveforms": 0,
+    "missing_hr_waveforms": 0,
+    "sample_missing_lr_ecg_ids": [],
+    "sample_missing_hr_ecg_ids": [],
+    "complete": true
+  },
+  "signal_loading": {
+    "wfdb_available": true,
+    "sample_size": 96,
+    "reference_lead_order": [
+      "I",
+      "II",
+      "III",
+      "AVR",
+      "AVL",
+      "AVF",
+      "V1",
+      "V2",
+      "V3",
+      "V4",
+      "V5",
+      "V6"
+    ],
+    "units_observed": "mV (from wfdb meta on sample ecg_id=1)",
+    "records100_lr_sample_audit": {
+      "attempted": 96,
+      "load_ok": 96,
+      "shape_mismatch": 0,
+      "fs_mismatch": 0,
+      "lead_order_mismatch": 0,
+      "nan_values": 0,
+      "errors": []
+    },
+    "records500_hr_sample_audit": {
+      "attempted": 96,
+      "load_ok": 96,
+      "shape_5000x12": 96,
+      "fs_500": 96,
+      "errors": []
+    },
+    "first_sample_hea_parsed": {
+      "n_leads": 12,
+      "fs_hz": 100.0,
+      "n_samples": 1000,
+      "lead_names": [
+        "I",
+        "II",
+        "III",
+        "AVR",
+        "AVL",
+        "AVF",
+        "V1",
+        "V2",
+        "V3",
+        "V4",
+        "V5",
+        "V6"
+      ]
+    },
+    "preprocessing_for_12x1000_at_100hz": {
+      "filename_lr": "Already 12 leads \u00d7 1000 samples at 100 Hz \u2014 no resampling required.",
+      "filename_hr": "500 Hz \u00d7 5000 samples \u2014 downsample by factor 5 (e.g. decimation or anti-alias filter) to 100 Hz \u00d7 1000."
+    }
+  },
+  "labels_and_splits": {
+    "scp_statements_rows": 71,
+    "diagnostic_statements": 44,
+    "rhythm_column_documentation": "scp_statements.csv rhythm=1.0 marks rhythm statements (e.g. SR, AFIB).",
+    "sr_statement_meaning": "SR = sinus rhythm (SCP-ECG); aECG REFID MDC_ECG_RHY_SINUS_RHY in official table.",
+    "diagnostic_superclass_counts": {
+      "NORM": 9514,
+      "MI": 5469,
+      "STTC": 5235,
+      "HYP": 2649,
+      "CD": 4898
+    },
+    "records_with_multiple_superclasses": 5144,
+    "records_with_no_diagnostic_superclass": 411,
+    "records_with_SR_in_scp_codes": 16748,
+    "target_definitions": {
+      "official_multi_label_superclass": {
+        "description": "Five diagnostic superclasses NORM, MI, STTC, CD, HYP via scp_codes + scp_statements diagnostic_class.",
+        "source": "example_physionet.py and PTB-XL publication"
+      },
+      "notebook_task": {
+        "description": "Independent binary heads per superclass (multi-label).",
+        "source": "data/datasets/ecg-ptb-xl.ipynb"
+      },
+      "medshield_sinus_rhythm_proxy": {
+        "description": "Repository contract: normal sinus rhythm (SNOMED 426783006) vs pathological superclasses MI/STTC. Operational mapping for audit counts: SR present in scp_codes AND no MI/STTC superclass vs MI or STTC superclass present. NOT validated heart-disease diagnosis.",
+        "source": "README.md, backend/app/models/ml_models.py ModelVersion.target_definition",
+        "snomed_in_ptbxl_csv": false,
+        "proxy_class_counts": {
+          "proxy_positive_sr_without_mi_sttc": 10168,
+          "proxy_negative_mi_or_sttc_superclass": 9365,
+          "proxy_ambiguous_other": 2266
+        }
+      }
+    },
+    "split_feasibility": {
+      "unique_patient_id": 18869,
+      "total_ecg_records": 21799,
+      "duplicate_ecg_id_rows": 0,
+      "strat_fold_distribution": {
+        "1": 2175,
+        "2": 2181,
+        "3": 2192,
+        "4": 2174,
+        "5": 2174,
+        "6": 2173,
+        "7": 2176,
+        "8": 2173,
+        "9": 2183,
+        "10": 2198
+      },
+      "patients_with_records_in_multiple_folds": 0,
+      "official_fold10_holdout_patient_overlap_with_other_folds": 0,
+      "recommended_strategy": {
+        "primary": "Patient-level split by patient_id with stratification on aggregated labels (deterministic seed 42).",
+        "official_baseline": "strat_fold != 10 train/val, strat_fold == 10 test (matches example_physionet.py) \u2014 document patient leakage.",
+        "test_fold_for_model_selection": "Forbidden \u2014 hold out fold 10 (or patient test partition) for final evaluation only.",
+        "manifest_path": "data/manifests/ptbxl_patient_split_seed42.json"
+      }
+    }
+  },
+  "verdicts": {
+    "PTBXL_installation_completeness": "GO",
+    "ECG_signal_loading": "GO",
+    "preprocessing_12x1000_at_100hz": "GO",
+    "ECG_target_validity": "CONDITIONAL_GO",
+    "patient_independent_evaluation_feasibility": "CONDITIONAL_GO",
+    "ECG_only_research_readiness": "GO",
+    "multimodal_GAT_readiness": "BLOCKED"
+  },
+  "verdict_notes": {
+    "ECG_target_validity": "Labels are SCP-ECG statements / superclasses \u2014 proxy only, not clinical heart-disease diagnosis.",
+    "multimodal_GAT_readiness": "No linkage to cardio_train.csv or NBME; unchanged from Prompt 11A."
+  }
+}
