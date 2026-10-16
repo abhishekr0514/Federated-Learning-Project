@@ -36,6 +36,10 @@ FLAT_FUSION_DIM = NUM_MODALITIES * NODE_DIM  # 384
 HIDDEN_DIM = 128
 NUM_CLASSES = 2
 
+DEFAULT_ECG_PROTOCOL_VERSION = "1.0.0"
+DEFAULT_TABULAR_SCHEMA_VERSION = "1.0.0"
+DEFAULT_TEXT_ENCODER_VERSION = "1.0.0"
+
 MODALITY_ORDER: tuple[str, ...] = ("ecg", "clinical_text", "tabular")
 
 # Fully connected directed edges over 3 nodes (including self-loops).
@@ -66,6 +70,27 @@ class FusionModelInput:
             raise FusionInputError("available and quality_ok must have the same shape.")
         if self.available.dim() != 2 or self.available.size(-1) != NUM_MODALITIES:
             raise FusionInputError(f"Masks must be [B, {NUM_MODALITIES}].")
+        if self.available.size(0) < 1:
+            raise FusionInputError("Batch size must be at least 1.")
+        if self.available.device != self.quality_ok.device:
+            raise FusionInputError(
+                f"available and quality_ok must be on the same device, got {self.available.device} vs {self.quality_ok.device}."
+            )
+        if not torch.isfinite(self.available).all() or not torch.isfinite(self.quality_ok).all():
+            raise FusionInputError("available and quality_ok masks must contain finite values.")
+        if self.available.dtype != torch.bool and not ((self.available == 0) | (self.available == 1)).all():
+            raise FusionInputError("available mask values must be boolean or binary {0, 1}.")
+        if self.quality_ok.dtype != torch.bool and not ((self.quality_ok == 0) | (self.quality_ok == 1)).all():
+            raise FusionInputError("quality_ok mask values must be boolean or binary {0, 1}.")
+
+        present_tensors = [t for t in (self.ecg, self.clinical_text, self.tabular) if t is not None]
+        if present_tensors:
+            first_dev = present_tensors[0].device
+            for t in present_tensors[1:]:
+                if t.device != first_dev:
+                    raise FusionInputError(
+                        f"All provided embedding tensors must be on the same device, got {first_dev} and {t.device}."
+                    )
 
 
 @dataclass
@@ -112,9 +137,9 @@ class FusionModelConfig:
     gat1_heads: int = 4
     gat2_heads: int = 1
     hidden_dropout: float = 0.3
-    ecg_protocol_version: str | None = None
-    tabular_schema_version: str | None = None
-    text_encoder_version: str | None = None
+    ecg_protocol_version: str | None = DEFAULT_ECG_PROTOCOL_VERSION
+    tabular_schema_version: str | None = DEFAULT_TABULAR_SCHEMA_VERSION
+    text_encoder_version: str | None = DEFAULT_TEXT_ENCODER_VERSION
     trained: bool = False
 
     def to_dict(self) -> dict[str, Any]:
@@ -135,15 +160,23 @@ def _validate_embedding(name: str, tensor: torch.Tensor | None, expected_last: i
         raise FusionInputError(
             f"{name} must have shape ({batch}, {expected_last}), got {tuple(tensor.shape)}."
         )
+    if not torch.is_floating_point(tensor):
+        raise FusionInputError(f"{name} embedding must be a floating-point tensor, got {tensor.dtype}.")
     if not torch.isfinite(tensor).all():
         raise FusionInputError(f"{name} contains non-finite values.")
 
 
-def _build_batched_graph(node_tensor: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+def _build_batched_graph(
+    node_tensor: torch.Tensor,
+    base_edge_index: torch.Tensor | None = None,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """node_tensor [B, 3, 128] -> PyG batched node features and edges."""
     b, n, f = node_tensor.shape
+    if b < 1:
+        raise FusionInputError(f"Batch size must be at least 1, got {b}.")
     x = node_tensor.reshape(b * n, f)
-    edge_index = _FC_EDGE_INDEX.to(node_tensor.device)
+    ref_edges = _FC_EDGE_INDEX if base_edge_index is None else base_edge_index
+    edge_index = ref_edges.to(node_tensor.device)
     offsets = torch.arange(b, device=node_tensor.device) * n
     batched_edges = torch.cat(
         [edge_index + off for off in offsets],
@@ -155,12 +188,18 @@ def _build_batched_graph(node_tensor: torch.Tensor) -> tuple[torch.Tensor, torch
 
 def _modality_tensors_present(fusion_input: FusionModelInput, batch: int, device: torch.device) -> torch.Tensor:
     present = torch.zeros(batch, NUM_MODALITIES, dtype=torch.bool, device=device)
-    if fusion_input.ecg is not None and fusion_input.ecg.size(0) == batch:
-        present[:, ModalityIndex.ECG] = True
-    if fusion_input.clinical_text is not None and fusion_input.clinical_text.size(0) == batch:
-        present[:, ModalityIndex.CLINICAL_TEXT] = True
-    if fusion_input.tabular is not None and fusion_input.tabular.size(0) == batch:
-        present[:, ModalityIndex.TABULAR] = True
+    expected_dims = (ECG_EMBED_DIM, TEXT_EMBED_DIM, TABULAR_EMBED_DIM)
+    tensors = (fusion_input.ecg, fusion_input.clinical_text, fusion_input.tabular)
+    for idx, (t, expected_dim) in enumerate(zip(tensors, expected_dims)):
+        if (
+            t is not None
+            and t.dim() == 2
+            and t.size(0) == batch
+            and t.size(1) == expected_dim
+            and torch.is_floating_point(t)
+            and torch.isfinite(t).all()
+        ):
+            present[:, idx] = True
     return present
 
 
@@ -177,7 +216,6 @@ def _unsupported_reasons(
                 row.append(f"{name}:unavailable")
             elif quality_ok[i, j].item() == 0:
                 row.append(f"{name}:quality_rejected")
-            # tensor presence checked separately via modality_used
         reasons.append(row)
     return reasons
 
@@ -189,6 +227,8 @@ def validate_full_modality_batch(fusion_input: FusionModelInput) -> None:
     Missing-modality imputation is not implemented (no contract-approved strategy).
     """
     batch = _batch_size_from_input(fusion_input)
+    if batch < 1:
+        raise FusionInputError(f"Batch size must be at least 1, got {batch}.")
     if fusion_input.available.size(0) != batch:
         raise FusionInputError("Batch size mismatch between embeddings and availability mask.")
 
@@ -205,6 +245,18 @@ def validate_full_modality_batch(fusion_input: FusionModelInput) -> None:
     _validate_embedding("ecg", fusion_input.ecg, ECG_EMBED_DIM, batch)
     _validate_embedding("clinical_text", fusion_input.clinical_text, TEXT_EMBED_DIM, batch)
     _validate_embedding("tabular", fusion_input.tabular, TABULAR_EMBED_DIM, batch)
+
+    assert fusion_input.ecg is not None
+    assert fusion_input.clinical_text is not None
+    assert fusion_input.tabular is not None
+
+    dev = fusion_input.ecg.device
+    if fusion_input.clinical_text.device != dev or fusion_input.tabular.device != dev:
+        raise FusionInputError(
+            f"Device mismatch between modality embeddings: ecg on {dev}, "
+            f"clinical_text on {fusion_input.clinical_text.device}, "
+            f"tabular on {fusion_input.tabular.device}."
+        )
 
 
 class MedShieldDiagnosticNet(nn.Module):
@@ -244,6 +296,7 @@ class MedShieldDiagnosticNet(nn.Module):
             nn.Dropout(p=self.config.hidden_dropout),
         )
         self.classifier_out = nn.Linear(HIDDEN_DIM, NUM_CLASSES)
+        self.register_buffer("fc_edge_index", _FC_EDGE_INDEX, persistent=False)
 
     def build_graph_nodes(
         self,
@@ -260,11 +313,11 @@ class MedShieldDiagnosticNet(nn.Module):
         return nodes
 
     def forward_gat_stack(self, nodes: torch.Tensor) -> torch.Tensor:
-        x, edge_index, _batch = _build_batched_graph(nodes)
+        x, edge_index, _batch = _build_batched_graph(nodes, self.fc_edge_index)
         x = F.elu(self.gat1(x, edge_index))
         x = F.elu(self.gat2(x, edge_index))
         b = nodes.size(0)
-        return x.view(b, NUM_MODALITIES, NODE_DIM)
+        return x.reshape(b, NUM_MODALITIES, NODE_DIM)
 
     def forward_head(self, nodes_after_gat: torch.Tensor) -> torch.Tensor:
         flat = nodes_after_gat.reshape(nodes_after_gat.size(0), FLAT_FUSION_DIM)
@@ -277,15 +330,22 @@ class MedShieldDiagnosticNet(nn.Module):
     def forward(self, fusion_input: FusionModelInput) -> FusionResearchOutput:
         validate_full_modality_batch(fusion_input)
         batch = _batch_size_from_input(fusion_input)
-        avail = fusion_input.available.to(dtype=torch.bool)
-        quality = fusion_input.quality_ok.to(dtype=torch.bool)
-        present = _modality_tensors_present(fusion_input, batch, avail.device)
-        modality_used = avail & quality & present
 
         ecg = fusion_input.ecg
         clinical_text = fusion_input.clinical_text
         tabular = fusion_input.tabular
         assert ecg is not None and clinical_text is not None and tabular is not None
+
+        model_device = next(self.parameters()).device
+        if ecg.device != model_device:
+            raise FusionInputError(
+                f"Input embeddings on device {ecg.device} do not match model device {model_device}."
+            )
+
+        avail = fusion_input.available.to(device=model_device, dtype=torch.bool)
+        quality = fusion_input.quality_ok.to(device=model_device, dtype=torch.bool)
+        present = _modality_tensors_present(fusion_input, batch, model_device)
+        modality_used = avail & quality & present
 
         nodes = self.build_graph_nodes(ecg, clinical_text, tabular)
         nodes = self.forward_gat_stack(nodes)
@@ -316,15 +376,29 @@ class MedShieldDiagnosticNet(nn.Module):
         Never marks missing modalities as used.
         """
         batch = _batch_size_from_input(fusion_input)
+        if batch < 1:
+            raise FusionInputError(f"Batch size must be at least 1, got {batch}.")
         avail = fusion_input.available.to(dtype=torch.bool)
         quality = fusion_input.quality_ok.to(dtype=torch.bool)
         present = _modality_tensors_present(fusion_input, batch, avail.device)
         modality_used = avail & quality & present
         reasons = _unsupported_reasons(avail, quality)
+
+        expected_dims = (ECG_EMBED_DIM, TEXT_EMBED_DIM, TABULAR_EMBED_DIM)
+        tensors = (fusion_input.ecg, fusion_input.clinical_text, fusion_input.tabular)
+
         for i in range(batch):
-            for j, name in enumerate(MODALITY_ORDER):
-                if avail[i, j] and quality[i, j] and not present[i, j]:
-                    reasons[i].append(f"{name}:embedding_missing")
+            for j, (name, t, expected_dim) in enumerate(zip(MODALITY_ORDER, tensors, expected_dims)):
+                if avail[i, j] and quality[i, j]:
+                    if t is None:
+                        reasons[i].append(f"{name}:embedding_missing")
+                    elif t.dim() != 2 or t.size(0) != batch or t.size(1) != expected_dim:
+                        reasons[i].append(f"{name}:invalid_shape")
+                    elif not torch.is_floating_point(t):
+                        reasons[i].append(f"{name}:invalid_dtype")
+                    elif not torch.isfinite(t).all():
+                        reasons[i].append(f"{name}:non_finite")
+
         complete = modality_used.all(dim=1)
         return FusionResearchOutput(
             logits=None,
@@ -341,7 +415,7 @@ class MedShieldDiagnosticNet(nn.Module):
 
 
 def save_fusion_checkpoint(
-    path: Path,
+    path: Path | str,
     model: MedShieldDiagnosticNet,
     *,
     extra_metadata: dict[str, Any] | None = None,
@@ -363,17 +437,32 @@ def save_fusion_checkpoint(
         "state_dict": model.state_dict(),
         "metadata": extra_metadata or {},
     }
-    path.parent.mkdir(parents=True, exist_ok=True)
-    torch.save(payload, path)
+    checkpoint_path = Path(path)
+    checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+    torch.save(payload, checkpoint_path)
 
 
 def load_fusion_checkpoint(
-    path: Path,
+    path: Path | str,
     *,
     map_location: str | torch.device = "cpu",
     strict: bool = True,
 ) -> MedShieldDiagnosticNet:
-    payload = torch.load(path, map_location=map_location, weights_only=False)
+    checkpoint_path = Path(path)
+    if not checkpoint_path.is_file():
+        raise FusionCheckpointError(f"Checkpoint file not found: {checkpoint_path}")
+
+    try:
+        try:
+            payload = torch.load(checkpoint_path, map_location=map_location, weights_only=False)
+        except TypeError:
+            payload = torch.load(checkpoint_path, map_location=map_location)
+    except Exception as exc:
+        raise FusionCheckpointError(f"Failed to read checkpoint: {exc}") from exc
+
+    if not isinstance(payload, dict):
+        raise FusionCheckpointError(f"Invalid checkpoint format: expected dict, got {type(payload).__name__}.")
+
     if payload.get("architecture_id") != ARCHITECTURE_ID:
         raise FusionCheckpointError(
             f"Incompatible architecture_id: {payload.get('architecture_id')!r}"
@@ -382,22 +471,44 @@ def load_fusion_checkpoint(
         raise FusionCheckpointError(
             f"Incompatible architecture_version: {payload.get('architecture_version')!r}"
         )
+
     cfg_dict = payload.get("model_config") or {}
+    if "trained" not in cfg_dict and "trained" in payload:
+        cfg_dict["trained"] = payload["trained"]
+
     cfg = FusionModelConfig(**{k: v for k, v in cfg_dict.items() if k in FusionModelConfig.__dataclass_fields__})
     model = MedShieldDiagnosticNet(cfg)
+
     state = payload.get("state_dict")
-    if state is None:
-        raise FusionCheckpointError("Checkpoint missing state_dict.")
-    model.load_state_dict(state, strict=strict)
+    if state is None or not isinstance(state, dict):
+        raise FusionCheckpointError("Checkpoint missing or invalid state_dict.")
+
+    try:
+        model.load_state_dict(state, strict=strict)
+    except (RuntimeError, ValueError) as exc:
+        raise FusionCheckpointError(f"Failed to load state_dict into MedShieldDiagnosticNet: {exc}") from exc
+
     return model
 
 
-def checkpoint_summary(path: Path) -> dict[str, Any]:
-    payload = torch.load(path, map_location="cpu", weights_only=False)
+def checkpoint_summary(path: Path | str) -> dict[str, Any]:
+    checkpoint_path = Path(path)
+    if not checkpoint_path.is_file():
+        raise FusionCheckpointError(f"Checkpoint file not found: {checkpoint_path}")
+    try:
+        try:
+            payload = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+        except TypeError:
+            payload = torch.load(checkpoint_path, map_location="cpu")
+    except Exception as exc:
+        raise FusionCheckpointError(f"Failed to read checkpoint: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise FusionCheckpointError(f"Invalid checkpoint format: expected dict, got {type(payload).__name__}.")
     return {
         "architecture_id": payload.get("architecture_id"),
         "architecture_version": payload.get("architecture_version"),
         "trained": payload.get("trained", False),
         "modality_order": payload.get("modality_order"),
         "pytorch": payload.get("framework", {}).get("pytorch"),
+        "model_config": payload.get("model_config", {}),
     }

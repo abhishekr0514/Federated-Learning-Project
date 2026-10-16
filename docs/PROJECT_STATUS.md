@@ -47,7 +47,7 @@
   - **ECG Baseline (Prompt 12)**: 1D CNN + BiLSTM baseline architecture and protocol implemented; raw PTB-XL files absent locally; full run blocked.
   - **Clinical Text Encoder (Prompt 13)**: Privacy masking and BioClinicalBERT projection implemented; NBME concept extraction pipeline and genuine pretrained weights absent.
   - **Tabular Baseline (Prompt 14, 17, 18)**: Feature schema bug resolved (allowed derived gender {0, 1}); `TabularBinaryClassifier` implemented; stratified splitting, Youden's J validation thresholding, and training pipeline implemented; unit-tested; real-cohort execution blocked on PyTorch environment.
-  - **Multimodal GAT Architecture (Prompt 15)**: Untrained architecture preserved; production inference disabled.
+  - **Multimodal GAT Architecture (Prompt 15, 19)**: Architecture audited and repaired; fail-closed input validation, non-persistent edge-index buffer registration, device alignment, typed `FusionCheckpointError` save/load, and sub-encoder protocol version tracking implemented; structural unit test suite expanded covering all 15 contract criteria; untrained state preserved (`trained=false`); production inference (`POST /api/v1/diagnosis/evaluate`) remains disabled (HTTP 501); supervised GAT training remains blocked due to absent linked multimodal dataset.
   - **Multimodal Linkage Audit (Prompt 16/16B)**: Zero cross-cohort joins; MIMIC absent at raw paths; three-modality GAT training BLOCKED. Dataset inventory checksum reconciled for canonical Git blob LF formatting.
 
 ---
