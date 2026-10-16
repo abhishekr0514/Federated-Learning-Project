@@ -147,3 +147,18 @@ def test_audit_json_artifact_matches_blocked_training():
     assert data["merged_dataset_materialized"] is False
     assert data["training_conducted"] is False
     assert set(data["missing_datasets"]) == {"mimic_iv_ecg", "mimic_iv", "mimic_iv_note"}
+
+
+def test_metadata_audit_runs_without_ml_stack():
+    import sys
+
+    # Verify metadata-only modules do not import torch
+    assert "torch" not in sys.modules, "torch was unexpectedly imported prior to metadata audit"
+    import ml.datasets.mimic_linkage_audit
+    import ml.datasets.nbme_text
+
+    assert "torch" not in sys.modules, "importing metadata modules caused eager torch import"
+    result = ml.datasets.mimic_linkage_audit.run_local_install_audit(REPO)
+    assert result["verdict_three_modality_gat_training"] == "BLOCKED"
+    assert "torch" not in sys.modules, "running install audit caused eager torch import"
+

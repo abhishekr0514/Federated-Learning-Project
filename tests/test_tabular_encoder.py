@@ -6,11 +6,17 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-import torch
+
+torch = pytest.importorskip("torch")
 import torch.nn as nn
 
 from ml.datasets.cardio_tabular import row_to_features_and_target
-from ml.models.tabular_encoder import DROPOUT_P, EMBED_DIM, NeuralTabularEncoder
+from ml.models.tabular_encoder import (
+    DROPOUT_P,
+    EMBED_DIM,
+    NeuralTabularEncoder,
+    TabularBinaryClassifier,
+)
 from ml.tabular.errors import TabularRowValidationError, TabularSchemaError, TabularTransformError
 from ml.tabular.feature_schema import (
     EXCLUDED_FROM_FEATURES,
@@ -209,3 +215,54 @@ def test_smoke_forward_software_only():
     with torch.no_grad():
         emb = model(x)
     assert emb.shape == (1, 64)
+
+
+def test_tabular_binary_classifier_shapes():
+    torch.manual_seed(42)
+    classifier = TabularBinaryClassifier()
+    classifier.eval()
+
+    # Batch of 4
+    x4 = torch.randn(4, N_TABULAR_FEATURES)
+    logits4, emb4 = classifier(x4)
+    assert logits4.shape == (4,)
+    assert emb4.shape == (4, EMBED_DIM)
+    assert torch.isfinite(logits4).all()
+    assert torch.isfinite(emb4).all()
+
+    # Batch of 1 (must remain 1D shape (1,), not scalar ())
+    x1 = torch.randn(1, N_TABULAR_FEATURES)
+    logits1, emb1 = classifier(x1)
+    assert logits1.shape == (1,)
+    assert emb1.shape == (1, EMBED_DIM)
+
+
+def test_tabular_binary_classifier_gradients():
+    torch.manual_seed(42)
+    classifier = TabularBinaryClassifier()
+    classifier.train()
+
+    x = torch.randn(8, N_TABULAR_FEATURES)
+    y = torch.tensor([0.0, 1.0, 1.0, 0.0, 1.0, 0.0, 0.0, 1.0])
+
+    logits, emb = classifier(x)
+    criterion = nn.BCEWithLogitsLoss()
+    loss = criterion(logits, y)
+    loss.backward()
+
+    # Verify gradients reach classification head and encoder layers
+    assert classifier.classifier.weight.grad is not None
+    assert torch.isfinite(classifier.classifier.weight.grad).all()
+    assert classifier.encoder.fc1.weight.grad is not None
+    assert torch.isfinite(classifier.encoder.fc1.weight.grad).all()
+    assert classifier.encoder.fc2.weight.grad is not None
+    assert torch.isfinite(classifier.encoder.fc2.weight.grad).all()
+
+
+def test_tabular_binary_classifier_rejects_bad_input():
+    classifier = TabularBinaryClassifier()
+    with pytest.raises(ValueError, match="shape"):
+        classifier(torch.randn(4, 9))
+    with pytest.raises(ValueError, match="non-finite"):
+        classifier(torch.tensor([[float("nan")] * N_TABULAR_FEATURES]))
+

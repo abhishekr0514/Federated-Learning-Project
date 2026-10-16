@@ -36,8 +36,10 @@
     "data/datasets/patient_notes.csv": {
       "relative_path": "data/datasets/patient_notes.csv",
       "filename": "patient_notes.csv",
-      "size_bytes": 34966100,
-      "sha256": "b0cea588f3ca8610973891105e460ee75bf7e0bdc6483de317d00a077b44b368",
+      "size_bytes": 34713238,
+      "sha256": "2c495cb81e6077d6a805855a98b620e0432b6ad1035b7357ca13fad347aef114",
+      "checksum_semantics": "canonical_git_blob_lf",
+      "historical_windows_crlf_sha256": "b0cea588f3ca8610973891105e460ee75bf7e0bdc6483de317d00a077b44b368",
       "format": "CSV",
       "artifact_role": "clinical_text_corpus",
       "parse_status": "PARSE_OK",

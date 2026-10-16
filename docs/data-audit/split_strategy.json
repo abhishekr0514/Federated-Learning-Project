@@ -27,8 +27,8 @@
       "test.csv from Kaggle has withheld labels \u2014 cannot be used for evaluation. Use train/val split only.",
       "Split by pn_num (not by annotation row id) to prevent the same note appearing in train and validation."
     ],
-    "dataset_checksum_sha256": "364a046f54189ae6f3f746226830a124a89203d67c3076e0ef901a2f16f2dbc8",
-    "notes_checksum_sha256": "b0cea588f3ca8610973891105e460ee75bf7e0bdc6483de317d00a077b44b368",
+    "notes_checksum_sha256": "2c495cb81e6077d6a805855a98b620e0432b6ad1035b7357ca13fad347aef114",
+    "historical_windows_crlf_sha256": "b0cea588f3ca8610973891105e460ee75bf7e0bdc6483de317d00a077b44b368",
     "manifest_output_path": "data/manifests/nbme_note_split_seed42.json"
   },
   "PTB-XL_ECG": {

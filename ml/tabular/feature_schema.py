@@ -51,7 +51,7 @@ FEATURE_SPECS: tuple[FeatureSpec, ...] = (
         "gender",
         FeatureKind.BINARY,
         "1 if female (source gender code 1), else 0 (source code 2 = male).",
-        ordinal_allowed=frozenset({1, 2}),
+        ordinal_allowed=frozenset({0, 1}),
     ),
     FeatureSpec(
         "ap_hi",
@@ -144,7 +144,13 @@ def extract_feature_vector_from_row(row: dict[str, Any]) -> dict[str, float]:
     validate_raw_record_columns(row.keys())
     age_days = float(row["age"])
     age_years = age_days / 365.25
-    gender = int(float(row["gender"]))
+    try:
+        raw_gender_f = float(row["gender"])
+    except (ValueError, TypeError) as exc:
+        raise TabularRowValidationError(f"Non-numeric gender code: {row.get('gender')}") from exc
+    if not raw_gender_f.is_integer() or int(raw_gender_f) not in (1, 2):
+        raise TabularRowValidationError(f"Invalid raw gender code: {row['gender']}")
+    gender = int(raw_gender_f)
     height_cm = float(row["height"])
     weight_kg = float(row["weight"])
     bmi = weight_kg / ((height_cm / 100.0) ** 2)

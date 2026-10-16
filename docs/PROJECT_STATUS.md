@@ -43,7 +43,12 @@
 ### 3. Known Defects / Gaps
 - **Model Storage**: Object Storage service layer (`local_storage_ref`) for weights and artifact management is pending implementation.
 - **Repository Pattern**: Repository classes for model entities pending implementation.
-- **ML Pipeline (Prompt 12–16B)**: PTB-XL ECG baseline, BioClinicalBERT text encoder, Neural Tabular Encoder, and untrained GAT fusion architecture. **Prompt 16/16B:** no PTB–NBME–cardio crosswalk; **MIMIC-IV-ECG, MIMIC-IV, and MIMIC-IV-Note are not installed** at documented `data/raw/` paths — **three-modality GAT training BLOCKED** (`docs/data-audit/MIMIC_LINKAGE_AUDIT.md`). Federated training, DiCE/DoWhy, and production inference remain **not enabled**.
+- **ML Pipeline (Prompt 12–18)**:
+  - **ECG Baseline (Prompt 12)**: 1D CNN + BiLSTM baseline architecture and protocol implemented; raw PTB-XL files absent locally; full run blocked.
+  - **Clinical Text Encoder (Prompt 13)**: Privacy masking and BioClinicalBERT projection implemented; NBME concept extraction pipeline and genuine pretrained weights absent.
+  - **Tabular Baseline (Prompt 14, 17, 18)**: Feature schema bug resolved (allowed derived gender {0, 1}); `TabularBinaryClassifier` implemented; stratified splitting, Youden's J validation thresholding, and training pipeline implemented; unit-tested; real-cohort execution blocked on PyTorch environment.
+  - **Multimodal GAT Architecture (Prompt 15)**: Untrained architecture preserved; production inference disabled.
+  - **Multimodal Linkage Audit (Prompt 16/16B)**: Zero cross-cohort joins; MIMIC absent at raw paths; three-modality GAT training BLOCKED. Dataset inventory checksum reconciled for canonical Git blob LF formatting.
 
 ---
 

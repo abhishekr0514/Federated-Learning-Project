@@ -28,7 +28,7 @@
 | `data/datasets/cardio_train.csv` | 2,941,524 | `21a705d23381b0df…` |
 | `data/datasets/ecg-ptb-xl.ipynb` | 2,189,151 | `773f2b98dfa748d2…` |
 | `data/datasets/features.csv` | 4,354 | `ba021dbf8b601d1e…` |
-| `data/datasets/patient_notes.csv` | 34,966,100 | `b0cea588f3ca8610…` |
+| `data/datasets/patient_notes.csv` | 34,713,238 | `2c495cb81e6077d6…` (LF git blob; historical Windows CRLF was 34,966,100 / `b0cea588…`) |
 | `data/datasets/sample_submission.csv` | 93 | `06539347d4293242…` |
 | `data/datasets/test.csv` | 141 | `212a67b8711a0e88…` |
 | `data/datasets/train.csv` | 761,246 | `364a046f54189ae6…` |

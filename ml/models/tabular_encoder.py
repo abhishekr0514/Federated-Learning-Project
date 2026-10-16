@@ -42,3 +42,26 @@ class NeuralTabularEncoder(nn.Module):
         if not torch.isfinite(x).all():
             raise ValueError("Encoder output contains non-finite values.")
         return x
+
+
+class TabularBinaryClassifier(nn.Module):
+    """
+    Prompt 17/18 Tabular Binary Classifier:
+    Encodes tabular features [B, 10] -> embeddings [B, 64] via NeuralTabularEncoder.
+    Classification head: nn.Linear(64, 1) -> logits [B].
+    Returns (logits, embeddings).
+    Sigmoid is NOT applied internally; use nn.BCEWithLogitsLoss.
+    """
+
+    def __init__(self, encoder: NeuralTabularEncoder | None = None) -> None:
+        super().__init__()
+        self.encoder = encoder if encoder is not None else NeuralTabularEncoder()
+        self.classifier = nn.Linear(EMBED_DIM, 1)
+
+    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        emb = self.encoder(x)
+        logits = self.classifier(emb).squeeze(-1)
+        if not torch.isfinite(logits).all():
+            raise ValueError("Classifier output contains non-finite values.")
+        return logits, emb
+
