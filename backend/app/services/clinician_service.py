@@ -12,9 +12,10 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from backend.app.core.errors import NotFoundError
+from backend.app.core.errors import ConflictError, ForbiddenError, NotFoundError
+from backend.app.services.capability_registry import get_clinician_workspace_capabilities
 from backend.app.models.identity import ClinicianProfile, Hospital, User
-from backend.app.models.patient import Patient, PatientClinicianAssignment
+from backend.app.models.patient import Patient, PatientClinicianAssignment, PatientHospitalAssociation
 from backend.app.models.clinical import (
     ClinicalObservation,
     DocumentProcessingJob,
@@ -110,13 +111,7 @@ class ClinicianService:
                     "message": None if ecg_count > 0 else "No ECG records acquired for assigned patients",
                 },
             },
-            "capabilities": {
-                "clinical_ai_inference": "NOT_IMPLEMENTED",
-                "dice_counterfactuals": "NOT_IMPLEMENTED",
-                "dowhy_causal": "NOT_IMPLEMENTED",
-                "flower_federated": "NOT_ENABLED",
-                "clinical_decision_support": "NOT_IMPLEMENTED",
-            },
+            "capabilities": get_clinician_workspace_capabilities(),
         }
 
     @staticmethod
@@ -171,6 +166,10 @@ class ClinicianService:
         )
         rows = (await db.execute(query_stmt)).all()
 
+        hosp_res = await db.execute(select(Hospital).where(Hospital.id == profile.hospital_id))
+        hospital = hosp_res.scalar_one_or_none()
+        hospital_code = hospital.code if hospital else None
+
         patient_list = []
         for assign, pat in rows:
             doc_cnt_stmt = select(func.count(MedicalDocument.id)).where(MedicalDocument.patient_id == pat.id)
@@ -183,6 +182,7 @@ class ClinicianService:
                 "patient_id": str(pat.id),
                 "opaque_patient_id": pat.opaque_patient_id,
                 "hospital_id": str(assign.hospital_id),
+                "hospital_code": hospital_code,
                 "assigned_at": assign.created_at.isoformat() if assign.created_at else None,
                 "documents_count": doc_cnt,
                 "ecg_records_count": ecg_cnt,
@@ -194,6 +194,100 @@ class ClinicianService:
             "limit": limit,
             "offset": offset,
             "patients": patient_list,
+        }
+
+    @staticmethod
+    async def get_eligible_patients_for_assignment(
+        db: AsyncSession,
+        profile: ClinicianProfile,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> Dict[str, Any]:
+        """Patients registered at the clinician's hospital without an assignment to this clinician."""
+        assigned_subq = (
+            select(PatientClinicianAssignment.patient_id)
+            .where(PatientClinicianAssignment.clinician_id == profile.id)
+        )
+        base = (
+            select(Patient)
+            .join(
+                PatientHospitalAssociation,
+                PatientHospitalAssociation.patient_id == Patient.id,
+            )
+            .where(
+                PatientHospitalAssociation.hospital_id == profile.hospital_id,
+                Patient.id.not_in(assigned_subq),
+            )
+        )
+        count_stmt = select(func.count()).select_from(base.subquery())
+        total = (await db.execute(count_stmt)).scalar_one() or 0
+        rows = (
+            await db.execute(base.order_by(Patient.created_at.desc()).limit(limit).offset(offset))
+        ).scalars().all()
+        return {
+            "status": "AVAILABLE" if total > 0 else "NO_DATA",
+            "total_count": total,
+            "limit": limit,
+            "offset": offset,
+            "patients": [
+                {
+                    "patient_id": str(p.id),
+                    "opaque_patient_id": p.opaque_patient_id,
+                    "hospital_id": str(profile.hospital_id),
+                }
+                for p in rows
+            ],
+        }
+
+    @staticmethod
+    async def assign_patient(
+        db: AsyncSession,
+        profile: ClinicianProfile,
+        patient_id: uuid.UUID,
+    ) -> Dict[str, Any]:
+        """Create explicit clinician-patient assignment within hospital boundary."""
+        if profile is None:
+            raise ForbiddenError("Clinician profile required for patient assignment")
+
+        pat_res = await db.execute(select(Patient).where(Patient.id == patient_id))
+        patient = pat_res.scalar_one_or_none()
+        if patient is None:
+            raise NotFoundError("Patient reference resource not accessible")
+
+        assoc_res = await db.execute(
+            select(PatientHospitalAssociation).where(
+                PatientHospitalAssociation.patient_id == patient_id,
+                PatientHospitalAssociation.hospital_id == profile.hospital_id,
+            )
+        )
+        if assoc_res.scalar_one_or_none() is None:
+            raise NotFoundError("Patient reference resource not accessible")
+
+        existing = await db.execute(
+            select(PatientClinicianAssignment).where(
+                PatientClinicianAssignment.patient_id == patient_id,
+                PatientClinicianAssignment.clinician_id == profile.id,
+            )
+        )
+        if existing.scalar_one_or_none() is not None:
+            raise ConflictError("Patient is already assigned to this clinician")
+
+        assignment = PatientClinicianAssignment(
+            id=uuid.uuid4(),
+            patient_id=patient_id,
+            clinician_id=profile.id,
+            hospital_id=profile.hospital_id,
+        )
+        db.add(assignment)
+        await db.flush()
+        return {
+            "status": "ASSIGNED",
+            "assignment_id": str(assignment.id),
+            "patient_id": str(patient_id),
+            "clinician_profile_id": str(profile.id),
+            "hospital_id": str(profile.hospital_id),
+            "opaque_patient_id": patient.opaque_patient_id,
         }
 
     @staticmethod
@@ -334,10 +428,15 @@ class ClinicianService:
                 ),
             },
             "ai_capabilities": {
-                "clinical_ai_inference": "NOT_IMPLEMENTED",
-                "dice_counterfactuals": "NOT_IMPLEMENTED",
-                "dowhy_causal": "NOT_IMPLEMENTED",
-                "clinical_decision_support": "NOT_IMPLEMENTED",
+                k: v
+                for k, v in get_clinician_workspace_capabilities().items()
+                if k
+                in (
+                    "clinical_ai_inference",
+                    "dice_counterfactuals",
+                    "dowhy_causal",
+                    "clinical_decision_support",
+                )
             },
         }
 

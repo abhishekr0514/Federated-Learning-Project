@@ -1,0 +1,10 @@
+{
+  "manifest_version": "1",
+  "checkpoint_relative_path": "checkpoints/medshield_gat_fusion.pt",
+  "architecture_id": "medshield.diagnostic_net.gat_fusion",
+  "architecture_version": "1.0.0",
+  "model_version_tag": "gat-fusion-v1-proxy",
+  "target_definition": "PTB-XL Normal Sinus Rhythm (SNOMED 426783006) vs Pathological Superclasses Proxy Task",
+  "prediction_type": "proxy_evaluation",
+  "require_trained_checkpoint": true
+}

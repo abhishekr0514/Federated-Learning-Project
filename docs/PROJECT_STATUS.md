@@ -40,6 +40,8 @@
   - **DiCE** for counterfactual explanations.
   - **DoWhy** for causal inference and intervention evaluation.
 
+- **Prompt 20 Flower FL Infrastructure**: `fl/` package (config, parameter validation, FedAvg, checkpoints, task adapters, runner). FedAvg via Flower `FedAvg` + `ValidatedFedAvg`. GAT/NBME federations blocked. Full-cohort federated training **deferred**; synthetic infrastructure smoke only. See `docs/FL_ARCHITECTURE.md`.
+
 ### 3. Known Defects / Gaps
 - **Model Storage**: Object Storage service layer (`local_storage_ref`) for weights and artifact management is pending implementation.
 - **Repository Pattern**: Repository classes for model entities pending implementation.

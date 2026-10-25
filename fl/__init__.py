@@ -1,1 +1,9 @@
-"""Flower Federated Learning Package."""
+"""MedShield-FL Flower federated learning infrastructure (Prompt 20)."""
+
+from fl.registry import READINESS_INFRASTRUCTURE, READINESS_TASK_EXPERIMENT, READINESS_CLINICAL_MULTIMODAL
+
+__all__ = [
+    "READINESS_INFRASTRUCTURE",
+    "READINESS_TASK_EXPERIMENT",
+    "READINESS_CLINICAL_MULTIMODAL",
+]

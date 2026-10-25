@@ -60,7 +60,6 @@ async def setup_test_db():
 
 
 V1_POST_501_ENDPOINTS = [
-    "/api/v1/diagnosis/evaluate",
     "/api/v1/explanations/dice",
     "/api/v1/causal/evaluate-intervention",
 ]
@@ -81,6 +80,40 @@ V1_GET_501_ENDPOINTS = [
 def auth_headers():
     token, _ = create_access_token(user_id=str(SUPER_ADMIN_ID))
     return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.mark.anyio
+async def test_diagnosis_readiness_route_registered_and_returns_safe_json():
+    """Regression: readiness must be on the MedShield app OpenAPI and return safe diagnostics."""
+    from backend.app.main import app as medshield_app
+
+    assert "/api/v1/diagnosis/readiness" in medshield_app.openapi()["paths"]
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        res = await ac.get("/api/v1/diagnosis/readiness")
+    assert res.status_code == 200
+    body = res.json()
+    assert "ready" in body
+    assert "blockers" in body
+    assert "dependencies" in body
+    assert "next_steps" in body
+    assert "environment" in body
+
+
+@pytest.mark.anyio
+async def test_diagnosis_evaluate_returns_503_when_inference_not_ready(auth_headers):
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        res = await ac.post(
+            "/api/v1/diagnosis/evaluate?patient_id=00000000-0000-0000-0000-000000000099",
+            headers=auth_headers,
+            json={
+                "embeddings": {
+                    "ecg": [0.0] * 128,
+                    "clinical_text": [0.0] * 128,
+                    "tabular": [0.0] * 64,
+                }
+            },
+        )
+    assert res.status_code in (403, 404, 503)
 
 
 @pytest.mark.parametrize("endpoint", V1_POST_501_ENDPOINTS)

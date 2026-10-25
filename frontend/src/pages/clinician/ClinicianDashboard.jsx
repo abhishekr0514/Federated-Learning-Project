@@ -47,6 +47,11 @@ export function ClinicianDashboard() {
   const [patientSearch, setPatientSearch] = useState('');
   const patientLimit = 20;
 
+  const [eligiblePatients, setEligiblePatients] = useState([]);
+  const [eligibleLoading, setEligibleLoading] = useState(false);
+  const [assigningPatientId, setAssigningPatientId] = useState(null);
+  const [assignError, setAssignError] = useState(null);
+
   // Selected patient for dossier drill-down
   const [selectedPatientId, setSelectedPatientId] = useState(null);
   const [patientDossier, setPatientDossier] = useState(null);
@@ -108,6 +113,37 @@ export function ClinicianDashboard() {
       setLoading(false);
     }
   }, [patientPage]);
+
+  const fetchEligiblePatients = useCallback(async () => {
+    setEligibleLoading(true);
+    setAssignError(null);
+    try {
+      const data = await apiRequest('/api/v1/clinician/patients/eligible?limit=50&offset=0');
+      setEligiblePatients(data.patients || []);
+    } catch (err) {
+      setAssignError(err);
+      setEligiblePatients([]);
+    } finally {
+      setEligibleLoading(false);
+    }
+  }, []);
+
+  const handleAssignPatient = async (patientId) => {
+    setAssigningPatientId(patientId);
+    setAssignError(null);
+    try {
+      await apiRequest(`/api/v1/clinician/patients/${patientId}/assignment`, { method: 'POST' });
+      await fetchPatients();
+      await fetchEligiblePatients();
+      if (activeTab === 'dashboard') {
+        fetchOverview();
+      }
+    } catch (err) {
+      setAssignError(err);
+    } finally {
+      setAssigningPatientId(null);
+    }
+  };
 
   // Fetch patient dossier detail
   const fetchPatientDossier = useCallback(async (patientId) => {
@@ -172,12 +208,15 @@ export function ClinicianDashboard() {
       fetchOverview();
     } else if (activeTab === 'patients') {
       fetchPatients();
+      if (!selectedPatientId) {
+        fetchEligiblePatients();
+      }
     } else if (activeTab === 'documents') {
       fetchDocuments();
     } else if (activeTab === 'diagnosis') {
       fetchDiagnosis();
     }
-  }, [activeTab, fetchOverview, fetchPatients, fetchDocuments, fetchDiagnosis]);
+  }, [activeTab, fetchOverview, fetchPatients, fetchEligiblePatients, fetchDocuments, fetchDiagnosis, selectedPatientId]);
 
   // When patient drilldown is opened
   const handleSelectPatient = (patientId) => {
@@ -379,7 +418,7 @@ export function ClinicianDashboard() {
                       <tr>
                         <td><strong>Multimodal GAT Fusion</strong></td>
                         <td>ECG (1D CNN) + Notes (BERT) + Tabular</td>
-                        <td><ClinicalStatusBadge status={overview.capabilities.clinical_ai_inference} /></td>
+                        <td><ClinicalStatusBadge status={overview.capabilities.multimodal_gat_fusion || overview.capabilities.clinical_ai_inference} /></td>
                         <td style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
                           Runtime prediction suspended; no risk scores manufactured.
                         </td>
@@ -873,18 +912,73 @@ export function ClinicianDashboard() {
                 </div>
               </div>
 
+              {assignError && assignError.status !== 401 && assignError.status !== 403 ? (
+                <ClinicalError
+                  title="Assignment Request Failed"
+                  message={assignError.message || 'Unable to update patient assignment.'}
+                />
+              ) : null}
+
               {loading ? (
                 <ClinicalLoading message="Loading assigned patient directory..." />
               ) : filteredPatients.length === 0 ? (
-                <ClinicalEmptyState
-                  title="No Assigned Patients Found"
-                  description={
-                    patientSearch
-                      ? `No patients match the opaque hash query "${patientSearch}".`
-                      : 'There are currently no patients assigned to your clinician account.'
-                  }
-                  icon={Stethoscope}
-                />
+                <>
+                  <ClinicalEmptyState
+                    title="No Assigned Patients Found"
+                    description={
+                      patientSearch
+                        ? `No patients match the opaque hash query "${patientSearch}".`
+                        : 'There are currently no patients assigned to your clinician account. Eligible hospital patients can be assigned below.'
+                    }
+                    icon={Stethoscope}
+                  />
+                  {!patientSearch ? (
+                    <div className="card" style={{ marginTop: '1rem' }}>
+                      <div className="card-header">
+                        <div className="card-title">Eligible Hospital Patients</div>
+                      </div>
+                      {eligibleLoading ? (
+                        <ClinicalLoading message="Loading eligible patients at your hospital node..." />
+                      ) : eligiblePatients.length === 0 ? (
+                        <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', padding: '0.5rem 0' }}>
+                          No unassigned patients are registered at your hospital node.
+                        </p>
+                      ) : (
+                        <table className="data-table" style={{ marginTop: '0.5rem' }}>
+                          <thead>
+                            <tr>
+                              <th>Opaque Patient ID</th>
+                              <th>Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {eligiblePatients.map((p) => (
+                              <tr key={p.patient_id}>
+                                <td>
+                                  <code style={{ background: 'var(--bg-secondary)', padding: '2px 6px', borderRadius: '4px' }}>
+                                    {p.opaque_patient_id.length > 20
+                                      ? `${p.opaque_patient_id.slice(0, 16)}...`
+                                      : p.opaque_patient_id}
+                                  </code>
+                                </td>
+                                <td>
+                                  <button
+                                    className="btn btn-secondary"
+                                    style={{ padding: '4px 10px', fontSize: '0.75rem' }}
+                                    disabled={assigningPatientId === p.patient_id}
+                                    onClick={() => handleAssignPatient(p.patient_id)}
+                                  >
+                                    {assigningPatientId === p.patient_id ? 'Assigning…' : 'Assign to Me'}
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+                    </div>
+                  ) : null}
+                </>
               ) : (
                 <>
                   <div style={{ overflowX: 'auto', marginTop: '0.75rem' }}>
@@ -910,7 +1004,7 @@ export function ClinicianDashboard() {
                               </code>
                             </td>
                             <td>
-                              <span className="badge badge-muted">LOCAL</span>
+                              <span className="badge badge-muted">{p.hospital_code || 'NODE'}</span>
                             </td>
                             <td>{p.assigned_at ? new Date(p.assigned_at).toLocaleDateString() : 'N/A'}</td>
                             <td>{p.documents_count}</td>

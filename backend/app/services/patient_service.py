@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from backend.app.core.errors import NotFoundError
+from backend.app.services.capability_registry import get_patient_portal_capabilities
 from backend.app.models.patient import Patient, PatientHospitalAssociation
 from backend.app.models.clinical import (
     ClinicalObservation,
@@ -108,14 +109,7 @@ class PatientService:
                 "message": "AI-assisted assessment is not currently available.",
                 "safety_wording": ASSESSMENT_UNAVAILABLE_DISCLAIMER,
             },
-            "capabilities": {
-                "ai_assisted_assessment": "NOT_ENABLED",
-                "ecg_analysis": "NOT_IMPLEMENTED",
-                "explanation_summaries": "NOT_IMPLEMENTED",
-                "causal_insights": "NOT_IMPLEMENTED",
-                "clinical_decision_support": "NOT_IMPLEMENTED",
-                "patient_messaging": "NOT_IMPLEMENTED",
-            },
+            "capabilities": get_patient_portal_capabilities(),
         }
 
     @staticmethod

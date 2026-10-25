@@ -93,6 +93,26 @@ class ForbiddenError(BaseAppException):
         )
 
 
+class InferenceNotReadyError(BaseAppException):
+    def __init__(self, message: str = "Inference pipeline is not ready", details: any = None):
+        super().__init__(
+            message=message,
+            code="INFERENCE_NOT_READY",
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            details=details,
+        )
+
+
+class ConflictError(BaseAppException):
+    def __init__(self, message: str = "Resource conflict", details: any = None):
+        super().__init__(
+            message=message,
+            code="CONFLICT",
+            status_code=status.HTTP_409_CONFLICT,
+            details=details,
+        )
+
+
 def build_error_response(code: str, message: str, status_code: int, details: any = None) -> JSONResponse:
     """Helper constructing standardized APIErrorResponse payload."""
     req_id = get_current_request_id()

@@ -1,0 +1,32 @@
+{
+  "federation_id": "medshield.fl.tabular_cardio.v1",
+  "task_id": "medshield.tabular.cardio_survey.baseline",
+  "architecture_id": "medshield.tabular.cardio_survey.classifier",
+  "architecture_version": "1.0.0",
+  "feature_schema_id": "medshield.tabular.cardio_survey",
+  "feature_schema_version": "1.0.0",
+  "preprocessing_contract_id": "medshield.tabular.cardio_survey.preprocessing",
+  "preprocessing_contract_version": "1.0.0",
+  "aggregation_strategy": "fedavg",
+  "seed": 42,
+  "num_rounds": 0,
+  "output_dir": "data/processed/federated",
+  "auto_start_training": false,
+  "synthetic_infrastructure_smoke": false,
+  "participation": {
+    "num_clients": 2,
+    "min_fit_clients": 2,
+    "min_evaluate_clients": 2,
+    "min_available_clients": 2,
+    "fraction_fit": 1.0,
+    "fraction_evaluate": 1.0,
+    "accept_failures": false
+  },
+  "local_training": {
+    "local_epochs": 0,
+    "batch_size": 256,
+    "learning_rate": 0.001,
+    "weight_decay": 0.0001
+  },
+  "allowed_client_metrics": ["loss"]
+}

@@ -41,6 +41,10 @@ export function ClinicalStatusBadge({ status }) {
       badgeClass = 'badge badge-purple';
       label = 'NOT IMPLEMENTED';
       break;
+    case 'MISSING_DEPENDENCY':
+      badgeClass = 'badge badge-warning';
+      label = 'MISSING DEPENDENCY';
+      break;
     case 'FORBIDDEN':
     case 'ERROR':
     case 'CRITICAL':

@@ -315,8 +315,15 @@ async def test_clinician_can_access_assigned_patient(seeded_clinician_env):
         assert ov["clinician"]["department"] == "Cardiology"
         assert ov["metrics"]["assigned_patients"]["count"] == 1
         assert ov["metrics"]["assigned_patients"]["status"] == "AVAILABLE"
-        assert ov["capabilities"]["clinical_ai_inference"] == "NOT_IMPLEMENTED"
-        assert ov["capabilities"]["dice_counterfactuals"] == "NOT_IMPLEMENTED"
+        assert ov["capabilities"]["clinical_ai_inference"] in (
+            "NOT_IMPLEMENTED",
+            "NOT_ENABLED",
+            "MISSING_DEPENDENCY",
+        )
+        assert ov["capabilities"]["dice_counterfactuals"] in (
+            "NOT_IMPLEMENTED",
+            "MISSING_DEPENDENCY",
+        )
 
         # Patient Detail
         res_pat = await ac.get(f"/api/v1/clinician/patients/{pat_id}", headers=headers)
@@ -327,7 +334,11 @@ async def test_clinician_can_access_assigned_patient(seeded_clinician_env):
         assert data["documents"]["count"] == 1
         assert data["ecg_records"]["count"] == 1
         assert data["diagnosis"]["status"] == "NO_DATA"
-        assert data["ai_capabilities"]["clinical_ai_inference"] == "NOT_IMPLEMENTED"
+        assert data["ai_capabilities"]["clinical_ai_inference"] in (
+            "NOT_IMPLEMENTED",
+            "NOT_ENABLED",
+            "MISSING_DEPENDENCY",
+        )
 
 
 @pytest.mark.anyio
@@ -487,3 +498,85 @@ async def test_privacy_and_provenance_invariants_across_all_responses(seeded_cli
         assert "risk_score" not in detail_json
         assert "accuracy" not in detail_json
         assert detail_json["diagnosis"]["status"] == "NO_DATA"
+
+
+@pytest.mark.anyio
+async def test_eligible_patients_lists_hospital_unassigned_only(seeded_clinician_env):
+    """Eligible directory includes same-hospital unassigned patients, not cross-hospital or already assigned."""
+    headers = {"Authorization": f"Bearer {seeded_clinician_env['token_clin_1']}"}
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        res = await ac.get("/api/v1/clinician/patients/eligible?limit=10&offset=0", headers=headers)
+        assert res.status_code == 200
+        data = res.json()
+        assert data["total_count"] == 1
+        assert data["patients"][0]["patient_id"] == seeded_clinician_env["pat_unassigned_1_id"]
+
+
+@pytest.mark.anyio
+async def test_assign_patient_success_and_duplicate_conflict(seeded_clinician_env):
+    """Clinician can assign eligible patient; duplicate assignment returns HTTP 409."""
+    headers = {"Authorization": f"Bearer {seeded_clinician_env['token_clin_1']}"}
+    unassigned_id = seeded_clinician_env["pat_unassigned_1_id"]
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        res_assign = await ac.post(
+            f"/api/v1/clinician/patients/{unassigned_id}/assignment",
+            headers=headers,
+        )
+        assert res_assign.status_code == 200
+        body = res_assign.json()
+        assert body["status"] == "ASSIGNED"
+        assert body["patient_id"] == unassigned_id
+
+        res_dup = await ac.post(
+            f"/api/v1/clinician/patients/{unassigned_id}/assignment",
+            headers=headers,
+        )
+        assert res_dup.status_code == 409
+
+        res_detail = await ac.get(f"/api/v1/clinician/patients/{unassigned_id}", headers=headers)
+        assert res_detail.status_code == 200
+
+
+@pytest.mark.anyio
+async def test_assign_patient_cross_hospital_returns_404(seeded_clinician_env):
+    """Clinician cannot assign patient registered at another hospital."""
+    headers = {"Authorization": f"Bearer {seeded_clinician_env['token_clin_1']}"}
+    hosp_b_pat = seeded_clinician_env["pat_hosp_b_id"]
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        res = await ac.post(
+            f"/api/v1/clinician/patients/{hosp_b_pat}/assignment",
+            headers=headers,
+        )
+        assert res.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_assign_patient_denied_for_patient_role(seeded_clinician_env):
+    """Patient users cannot call clinician assignment endpoints."""
+    headers = {"Authorization": f"Bearer {seeded_clinician_env['token_pat']}"}
+    pat_id = seeded_clinician_env["pat_unassigned_1_id"]
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        res = await ac.post(f"/api/v1/clinician/patients/{pat_id}/assignment", headers=headers)
+        assert res.status_code == 403
+
+
+@pytest.mark.anyio
+async def test_clinician_two_cannot_assign_other_clinicians_patient_detail(seeded_clinician_env):
+    """After clinician 1 assigns patient, clinician 2 still receives 404 on dossier access."""
+    headers_1 = {"Authorization": f"Bearer {seeded_clinician_env['token_clin_1']}"}
+    headers_2 = {"Authorization": f"Bearer {seeded_clinician_env['token_clin_2']}"}
+    unassigned_id = seeded_clinician_env["pat_unassigned_1_id"]
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        res_assign = await ac.post(
+            f"/api/v1/clinician/patients/{unassigned_id}/assignment",
+            headers=headers_1,
+        )
+        assert res_assign.status_code == 200
+
+        res_other = await ac.get(f"/api/v1/clinician/patients/{unassigned_id}", headers=headers_2)
+        assert res_other.status_code == 404

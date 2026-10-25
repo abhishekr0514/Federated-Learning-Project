@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { AdminLayout } from '../../layouts/AdminLayout';
 import { FeatureNotImplemented } from '../../components/ErrorStates';
-import { Server, Building2, Cpu, Activity, ShieldCheck, History } from 'lucide-react';
+import { TabularFederatedResearchPanel } from '../../components/admin/TabularFederatedResearchPanel';
+import { Server, Building2, ShieldCheck } from 'lucide-react';
 
 export function SuperAdminDashboard() {
   const [activeTab, setActiveTab] = useState('overview');
@@ -64,11 +65,15 @@ export function SuperAdminDashboard() {
       )}
 
       {activeTab === 'federated' && (
-        <FeatureNotImplemented
-          title="Flower Federated Engine Telemetry"
-          moduleName="Flower Federated Server"
-          description="Global aggregation telemetry and Flower client round orchestration are pending ML Flower server integration."
-        />
+        <div>
+          <header style={{ marginBottom: '1rem' }}>
+            <h2 style={{ fontSize: '1.15rem', fontWeight: 600 }}>Tabular federated research (read-only)</h2>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
+              Saved cardio_train.csv simulation results — not live multi-hospital training.
+            </p>
+          </header>
+          <TabularFederatedResearchPanel />
+        </div>
       )}
 
       {activeTab === 'models' && (

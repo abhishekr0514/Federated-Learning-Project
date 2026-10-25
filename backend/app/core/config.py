@@ -1,16 +1,23 @@
 """Core Application Configuration Settings."""
 
-import os
+from pathlib import Path
 from typing import List, Union
-from pydantic import Field, field_validator
+
+from typing_extensions import Self
+
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import URL
+
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_ENV_FILE = _REPO_ROOT / ".env"
 
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables or .env file."""
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=_ENV_FILE,
         env_file_encoding="utf-8",
         extra="ignore",
     )
@@ -38,9 +45,22 @@ class Settings(BaseSettings):
     POSTGRES_HOST: str = "localhost"
     POSTGRES_PORT: int = 5432
     POSTGRES_DB: str = "medshield_fl_db"
-    DATABASE_URL: str = Field(
-        default="postgresql+asyncpg://medshield_admin:medshield_dev_password@localhost:5432/medshield_fl_db"
-    )
+    # Assembled from POSTGRES_* after validation (see build_database_url). Not loaded from env.
+    DATABASE_URL: str = Field(default="", validate_default=False)
+
+    @model_validator(mode="after")
+    def build_database_url(self) -> Self:
+        """Build async SQLAlchemy URL from POSTGRES_* (handles special characters safely)."""
+        url = URL.create(
+            drivername="postgresql+asyncpg",
+            username=self.POSTGRES_USER,
+            password=self.POSTGRES_PASSWORD,
+            host=self.POSTGRES_HOST,
+            port=self.POSTGRES_PORT,
+            database=self.POSTGRES_DB,
+        )
+        object.__setattr__(self, "DATABASE_URL", url.render_as_string(hide_password=False))
+        return self
 
     # CORS Settings
     CORS_ORIGINS: Union[str, List[str]] = Field(
@@ -53,6 +73,10 @@ class Settings(BaseSettings):
         if isinstance(v, str):
             return [i.strip() for i in v.split(",") if i.strip()]
         return v
+
+    # ML artifact paths (optional; used for capability diagnostics only)
+    MODEL_DIR: str = Field(default="models")
+    INFERENCE_ENABLED: bool = Field(default=False)
 
     # Federated Learning Settings
     FLOWER_SERVER_ADDRESS: str = "127.0.0.1:8080"

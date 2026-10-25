@@ -1,1 +1,1 @@
-"""Model Inference Engine Package."""
+"""ML inference runtime (research / proxy evaluation only)."""

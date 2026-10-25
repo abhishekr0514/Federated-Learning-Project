@@ -47,6 +47,33 @@ async def get_assigned_patients(
     return await ClinicianService.get_assigned_patients(db, profile, limit=limit, offset=offset)
 
 
+@router.get("/patients/eligible")
+async def get_eligible_patients_for_assignment(
+    limit: int = Query(50, ge=1, le=100, description="Page size limit"),
+    offset: int = Query(0, ge=0, description="Page offset"),
+    db: AsyncSession = Depends(get_db),
+    clinician_ctx: Tuple[User, Optional[ClinicianProfile]] = Depends(get_current_clinician_context),
+) -> Dict[str, Any]:
+    """Patients at the clinician's hospital who are not yet assigned to this clinician."""
+    _, profile = clinician_ctx
+    return await ClinicianService.get_eligible_patients_for_assignment(
+        db, profile, limit=limit, offset=offset
+    )
+
+
+@router.post("/patients/{patient_id}/assignment")
+async def assign_patient_to_clinician(
+    patient_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    clinician_ctx: Tuple[User, Optional[ClinicianProfile]] = Depends(get_current_clinician_context),
+) -> Dict[str, Any]:
+    """Explicitly assign an eligible hospital patient to the authenticated clinician."""
+    _, profile = clinician_ctx
+    result = await ClinicianService.assign_patient(db, profile, patient_id)
+    await db.commit()
+    return result
+
+
 @router.get("/patients/{patient_id}")
 async def get_patient_detail(
     patient: Patient = Depends(get_authorized_clinician_patient),

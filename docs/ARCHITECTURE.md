@@ -89,7 +89,7 @@
 
 ## Federated Learning & Privacy Infrastructure
 
-1. **Flower Framework**: Client-server communication protocol for federated rounds, model parameter synchronization, and global weight aggregation.
+1. **Flower Framework** (`fl/`): Client-server parameter exchange, validated FedAvg aggregation, checkpoints, and runner (`py -m fl.runner`). See `docs/FL_ARCHITECTURE.md`. Infrastructure readiness does not enable full-cohort federated training or production inference.
 2. **Local Client Boundaries**: Raw patient data, raw ECG arrays, clinical notes, and PII NEVER leave local client hospital instances.
 3. **Privacy Masking**: Model gradients and parameter updates undergo noise addition / gradient clipping prior to outbound transmission.
 

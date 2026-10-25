@@ -6,6 +6,7 @@ from backend.app.api.v1.endpoints import (
     admin,
     audit,
     auth,
+    capabilities,
     causal,
     clinician,
     clinicians,
@@ -29,6 +30,7 @@ api_v1_router = APIRouter(prefix="/api/v1")
 api_v1_router.include_router(admin.router)
 api_v1_router.include_router(hospital.router)
 api_v1_router.include_router(auth.router)
+api_v1_router.include_router(capabilities.router)
 api_v1_router.include_router(users.router)
 api_v1_router.include_router(hospitals.router)
 api_v1_router.include_router(patient.router)
