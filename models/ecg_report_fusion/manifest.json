@@ -1,9 +1,9 @@
 {
   "architecture_id": "medshield.ecg_report_fusion.v1",
   "experiment": "two_modality_ecg_report_ptbxl",
-  "checkpoint_path": "data/processed/ecg_report_fusion/runs/20261025T051405Z/best_checkpoint.pt",
-  "normalization_path": "data/processed/ecg_report_fusion/runs/20261025T051405Z/normalization.json",
-  "run_manifest": "data/processed/ecg_report_fusion/runs/20261025T051405Z/manifest.json",
+  "checkpoint_path": "data/processed/ecg_report_fusion/runs/20261025T125307Z/best_checkpoint.pt",
+  "normalization_path": "data/processed/ecg_report_fusion/runs/20261025T125307Z/normalization.json",
+  "run_manifest": "data/processed/ecg_report_fusion/runs/20261025T125307Z/manifest.json",
   "trained": true,
   "three_modality_gat_checkpoint": false
 }

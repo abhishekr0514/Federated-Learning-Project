@@ -192,11 +192,47 @@ def main() -> int:
         args.patience = 1
         args.batch_size = min(args.batch_size, 8)
 
+    # Deterministic balanced sampling within each existing patient-disjoint split.
     for key in ("train", "validation", "test"):
         cap_name = "max_val" if key == "validation" else f"max_{key}"
         cap = getattr(args, cap_name, None)
-        if cap:
-            parts[key] = parts[key][:cap]
+        split = parts[key]
+
+        if cap is not None and cap > 0:
+            target = min(cap, len(split))
+            labels = np.array([int(rec["label"]) for rec in split])
+            classes = np.unique(labels)
+            rng = np.random.default_rng(args.seed)
+
+            if len(classes) > 1:
+                # Equal numbers from each existing class; never duplicate records.
+                quota = target // len(classes)
+                per_class = min(
+                    quota,
+                    *(int(np.sum(labels == cls)) for cls in classes)
+                )
+                selected = []
+                for cls in classes:
+                    indices = np.flatnonzero(labels == cls)
+                    selected.extend(
+                        rng.choice(indices, size=per_class, replace=False).tolist()
+                    )
+                rng.shuffle(selected)
+                parts[key] = [split[i] for i in selected]
+            elif len(classes) == 1:
+                indices = rng.choice(
+                    len(split), size=target, replace=False
+                )
+                parts[key] = [split[int(i)] for i in indices]
+
+        counts = {
+            str(cls): sum(int(rec["label"]) == cls for rec in parts[key])
+            for cls in (0, 1)
+        }
+        print(
+            f"{key}: {len(parts[key])} records; label counts={counts}",
+            flush=True,
+        )
 
     run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     run_dir = args.artifact_root / "runs" / run_id
