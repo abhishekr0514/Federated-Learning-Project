@@ -12,8 +12,10 @@ from backend.app.api.v1.endpoints import (
     clinicians,
     diagnosis,
     documents,
+    ecg_report,
     explanations,
     federated,
+    gat_fusion,
     hospital,
     hospitals,
     metrics,
@@ -40,6 +42,8 @@ api_v1_router.include_router(clinicians.router)
 api_v1_router.include_router(documents.router)
 api_v1_router.include_router(privacy.router)
 api_v1_router.include_router(diagnosis.router)
+api_v1_router.include_router(ecg_report.router)
+api_v1_router.include_router(gat_fusion.router)
 api_v1_router.include_router(explanations.router)
 api_v1_router.include_router(causal.router)
 api_v1_router.include_router(federated.router)

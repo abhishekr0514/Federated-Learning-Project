@@ -150,15 +150,24 @@ def test_audit_json_artifact_matches_blocked_training():
 
 
 def test_metadata_audit_runs_without_ml_stack():
+    import subprocess
     import sys
 
-    # Verify metadata-only modules do not import torch
-    assert "torch" not in sys.modules, "torch was unexpectedly imported prior to metadata audit"
-    import ml.datasets.mimic_linkage_audit
-    import ml.datasets.nbme_text
-
-    assert "torch" not in sys.modules, "importing metadata modules caused eager torch import"
-    result = ml.datasets.mimic_linkage_audit.run_local_install_audit(REPO)
-    assert result["verdict_three_modality_gat_training"] == "BLOCKED"
-    assert "torch" not in sys.modules, "running install audit caused eager torch import"
+    # Execute in a clean subprocess to verify metadata modules do not eagerly import torch
+    # even when other tests in a shared pytest process have imported torch.
+    script = (
+        "import sys\n"
+        "import pathlib\n"
+        "repo = pathlib.Path('.').resolve()\n"
+        "assert 'torch' not in sys.modules, 'torch was unexpectedly imported prior to metadata audit'\n"
+        "import ml.datasets.mimic_linkage_audit\n"
+        "import ml.datasets.nbme_text\n"
+        "assert 'torch' not in sys.modules, 'importing metadata modules caused eager torch import'\n"
+        "result = ml.datasets.mimic_linkage_audit.run_local_install_audit(repo)\n"
+        "assert result['verdict_three_modality_gat_training'] == 'BLOCKED'\n"
+        "assert 'torch' not in sys.modules, 'running install audit caused eager torch import'\n"
+        "print('PASS')\n"
+    )
+    proc = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, check=True)
+    assert "PASS" in proc.stdout
 

@@ -169,6 +169,7 @@ class FusionInferenceRuntime:
             "model_version_tag": manifest.model_version_tag,
             "confidence_uncalibrated": conf,
             "predicted_class_index": pred_class,
+            "predicted_class_label": "CVD" if pred_class == 1 else "NORM",
             "research_only": True,
             "proxy_task": True,
             "disclaimer": (

@@ -103,8 +103,12 @@ def try_load_pretrained_encoder(
         "pretrained_weights_loaded": False,
     }
     try:
-        tokenizer = AutoTokenizer.from_pretrained(cfg.model_id)
-        bert = AutoModel.from_pretrained(cfg.model_id)
+        try:
+            tokenizer = AutoTokenizer.from_pretrained(cfg.model_id, local_files_only=True)
+            bert = AutoModel.from_pretrained(cfg.model_id, local_files_only=True)
+        except Exception:
+            tokenizer = AutoTokenizer.from_pretrained(cfg.model_id)
+            bert = AutoModel.from_pretrained(cfg.model_id)
         meta["pretrained_weights_loaded"] = True
         meta["tokenizer_class"] = tokenizer.__class__.__name__
         meta["model_class"] = bert.__class__.__name__

@@ -287,13 +287,15 @@ def test_gradient_propagation_all_parameters():
         assert proj.weight.grad.abs().sum() > 0
 
     # Verify both GAT layers received gradients
-    assert model.gat1.lin_src.weight.grad is not None
-    assert torch.isfinite(model.gat1.lin_src.weight.grad).all()
-    assert model.gat1.lin_src.weight.grad.abs().sum() > 0
+    gat1_lin = model.gat1.lin if model.gat1.lin is not None else model.gat1.lin_src
+    assert gat1_lin.weight.grad is not None
+    assert torch.isfinite(gat1_lin.weight.grad).all()
+    assert gat1_lin.weight.grad.abs().sum() > 0
 
-    assert model.gat2.lin_src.weight.grad is not None
-    assert torch.isfinite(model.gat2.lin_src.weight.grad).all()
-    assert model.gat2.lin_src.weight.grad.abs().sum() > 0
+    gat2_lin = model.gat2.lin if model.gat2.lin is not None else model.gat2.lin_src
+    assert gat2_lin.weight.grad is not None
+    assert torch.isfinite(gat2_lin.weight.grad).all()
+    assert gat2_lin.weight.grad.abs().sum() > 0
 
     # Verify classification head received gradients
     assert model.classifier_hidden[0].weight.grad is not None

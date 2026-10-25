@@ -44,14 +44,46 @@ register_exception_handlers(app)
 app.include_router(api_v1_router)
 
 
+@app.on_event("startup")
+async def _warm_up_ecg_report_runtime() -> None:
+    """Eagerly warm-up the ECG+Report runtime on startup (non-blocking)."""
+    try:
+        from backend.app.services.ecg_report_inference_service import ECGReportInferenceService
+        ECGReportInferenceService.initialize_runtime()
+        logger.info("ECG + Report runtime warm-up complete.")
+    except Exception as exc:
+        logger.warning("ECG + Report runtime warm-up skipped: %s", type(exc).__name__)
+
+
 @app.get("/health", response_model=HealthResponse, status_code=status.HTTP_200_OK, tags=["Health"])
 async def health_check():
     """Infrastructure health check endpoint.
-    
+
     Exposes system readiness status without requiring authentication or DB connection.
-    Does NOT claim that model inference or federated campaigns are operational.
+    Dynamically queries ECG+Report runtime readiness.
+    Does NOT claim that model inference or federated campaigns are clinically validated.
     """
     req_id = get_current_request_id()
+
+    # Query ECG+Report runtime readiness (non-raising)
+    ecg_report_status = "unknown"
+    try:
+        from backend.app.services.ecg_report_inference_service import ECGReportInferenceService
+        readiness = ECGReportInferenceService.get_readiness()
+        ecg_report_status = "operational" if readiness.get("ready") else "not_ready"
+    except Exception:
+        ecg_report_status = "unavailable"
+
+    # GAT is truthfully blocked until a trained checkpoint is provided
+    gat_status = "blocked_awaiting_trained_checkpoint"
+    if settings.FUSION_INFERENCE_ENABLED:
+        try:
+            from backend.app.services.gat_fusion_service import GATFusionService
+            gat_readiness = GATFusionService.get_readiness()
+            gat_status = "operational" if gat_readiness.get("ready") else "blocked_awaiting_trained_checkpoint"
+        except Exception:
+            gat_status = "unavailable"
+
     return HealthResponse(
         status="healthy",
         service="medshield-fl-backend",
@@ -60,6 +92,7 @@ async def health_check():
         message="MedShield-FL backend service is running normally.",
         components=HealthComponentStatus(
             health_check="operational",
+            ecg_report_inference=ecg_report_status,
             gat_inference="pending_implementation",
             fl_orchestration="pending_implementation",
             database="configured",

@@ -52,6 +52,7 @@ class HealthComponentStatus(BaseModel):
     """Status of individual backend components."""
 
     health_check: str = Field(default="operational")
+    ecg_report_inference: str = Field(default="operational")
     gat_inference: str = Field(default="pending_implementation")
     fl_orchestration: str = Field(default="pending_implementation")
     database: str = Field(default="configured")

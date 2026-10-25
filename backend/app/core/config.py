@@ -77,6 +77,12 @@ class Settings(BaseSettings):
     # ML artifact paths (optional; used for capability diagnostics only)
     MODEL_DIR: str = Field(default="models")
     INFERENCE_ENABLED: bool = Field(default=False)
+    ECG_REPORT_MODEL_DIR: str = Field(default="models/ecg_report_fusion")
+    ECG_REPORT_INFERENCE_ENABLED: bool = Field(default=True)
+
+    # Three-modality GAT fusion settings
+    FUSION_MODEL_DIR: str = Field(default="models/gat_fusion")
+    FUSION_INFERENCE_ENABLED: bool = Field(default=False)
 
     # Federated Learning Settings
     FLOWER_SERVER_ADDRESS: str = "127.0.0.1:8080"
