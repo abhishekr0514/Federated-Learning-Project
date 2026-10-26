@@ -1,8 +1,4 @@
-"""FastAPI endpoints for three-modality GAT fusion proxy inference.
-
-Architecture: medshield.diagnostic_net.gat_fusion
-Research proxy task only. Not validated for clinical use.
-"""
+"""Two-modality GAT fusion (ECG + clinical report embeddings). Research proxy only."""
 
 from __future__ import annotations
 
@@ -34,11 +30,7 @@ router = APIRouter(prefix="/gat-fusion", tags=["GAT Fusion Inference"])
 )
 async def get_gat_fusion_readiness() -> Dict[str, Any]:
     """
-    Return safe readiness diagnostics for the three-modality GAT fusion pipeline.
-
-    Reports:
-    - Data linkage gate verdict (BLOCKED / CONDITIONAL_GO)
-    - Embedding dimension contracts (ECG: 128-d, text: 128-d, tabular: 64-d)
+    Return readiness for two-modality GAT (ECG 128-d + clinical text 128-d).
     - Fusion checkpoint presence and trained status
     - PyTorch and torch-geometric availability
 
@@ -51,7 +43,7 @@ async def get_gat_fusion_readiness() -> Dict[str, Any]:
     "/evaluate",
     response_model=GATFusionEvaluateResponse,
     status_code=status.HTTP_200_OK,
-    summary="Three-modality GAT fusion proxy evaluation",
+    summary="Two-modality GAT fusion proxy evaluation",
 )
 async def evaluate_gat_fusion(
     body: GATFusionEvaluateRequest,
@@ -64,27 +56,8 @@ async def evaluate_gat_fusion(
     ),
 ) -> GATFusionEvaluateResponse:
     """
-    Run a three-modality GAT (Graph Attention Network) fusion forward pass.
-
-    Inputs are **pre-computed embedding vectors** extracted by the upstream
-    single-modality encoders:
-
-    | Modality      | Dimension | Encoder                                |
-    |---------------|-----------|----------------------------------------|
-    | ECG           | 128       | ECGEmbeddingProvider                   |
-    | Clinical text | 128       | ClinicalTextEncodingPipeline (BERT CLS)|
-    | Tabular       | 64        | NeuralTabularEncoder                   |
-
-    At least one modality must be provided. Missing modalities are zero-padded
-    and masked inside `MedShieldDiagnosticNet`.
-
-    **This endpoint is BLOCKED in production until:**
-    1. A verified multimodal dataset with aligned ECG + text + tabular patient
-       records is obtained (e.g. MIMIC-IV-ECG + MIMIC-IV).
-    2. Supervised three-modality GAT training is executed and verified.
-    3. The trained checkpoint is placed in FUSION_MODEL_DIR with a valid manifest.
-
-    Returns an uncalibrated research proxy score. Not for clinical use.
+    Requires both 128-d embeddings from the authorized ECG-report encoder stack.
+    Enabled only when FUSION_INFERENCE_ENABLED=true and a trained GAT checkpoint is deployed.
     """
     return await GATFusionService.evaluate(
         body=body,

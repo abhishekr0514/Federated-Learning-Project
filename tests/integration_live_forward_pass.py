@@ -57,19 +57,25 @@ async def run_integration_test():
         }
         print(f"[PASS] /api/v1/ecg-report/readiness → ready={readiness['ready']}")
 
-        # --- 3. GAT Readiness (must be blocked) ---
+        # --- 3. GAT Readiness (ready only when inference flag + artifacts) ---
         r = await client.get("/api/v1/gat-fusion/readiness")
         assert r.status_code == 200
         gat_readiness = r.json()
-        assert gat_readiness["ready"] is False, "GAT should NOT be ready (no trained checkpoint)"
-        assert len(gat_readiness["blockers"]) > 0
+        assert "pairing_gate_verdict" in gat_readiness
+        assert gat_readiness["embedding_contracts"] == {"ecg": 128, "clinical_text": 128}
+        if not gat_readiness["ready"]:
+            assert len(gat_readiness["blockers"]) > 0
         results["gat_readiness"] = {
             "ready": gat_readiness["ready"],
-            "linkage_gate_verdict": gat_readiness["linkage_gate_verdict"],
+            "pairing_gate_verdict": gat_readiness["pairing_gate_verdict"],
+            "checkpoint_trained": gat_readiness.get("checkpoint_trained"),
             "blocker_count": len(gat_readiness["blockers"]),
         }
-        print(f"[PASS] /api/v1/gat-fusion/readiness → ready=False (correctly blocked)")
-        print(f"       verdict={gat_readiness['linkage_gate_verdict']}, blockers={len(gat_readiness['blockers'])}")
+        print(f"[PASS] /api/v1/gat-fusion/readiness → ready={gat_readiness['ready']}")
+        print(
+            f"       pairing={gat_readiness['pairing_gate_verdict']}, "
+            f"blockers={len(gat_readiness['blockers'])}"
+        )
 
         # --- 4. Attempt login to get JWT ---
         login_resp = await client.post(

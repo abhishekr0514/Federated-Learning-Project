@@ -56,6 +56,7 @@ class TabularFederationAdapter(TaskClientAdapter):
         batch_size: int = DEFAULT_BATCH_SIZE,
         learning_rate: float = DEFAULT_LR,
         weight_decay: float = DEFAULT_WEIGHT_DECAY,
+        class_weighted_loss: bool = False,
         device_name: str = "auto",
     ) -> None:
         self._train_records = train_records
@@ -67,6 +68,7 @@ class TabularFederationAdapter(TaskClientAdapter):
         self._batch_size = batch_size
         self._lr = learning_rate
         self._weight_decay = weight_decay
+        self._class_weighted_loss = class_weighted_loss
         self._device_name = device_name
         self._model = None
         self._device = None
@@ -166,7 +168,13 @@ class TabularFederationAdapter(TaskClientAdapter):
             return arrays, self.num_local_examples(), {"loss": 0.0}
 
         optimizer = torch.optim.Adam(self._model.parameters(), lr=lr, weight_decay=weight_decay)
-        criterion = nn.BCEWithLogitsLoss()
+        pos_weight = None
+        if self._class_weighted_loss and self._train_records:
+            n_pos = sum(1 for r in self._train_records if int(r["target"]) == 1)
+            n_neg = len(self._train_records) - n_pos
+            if n_pos > 0:
+                pos_weight = torch.tensor([float(n_neg / n_pos)], device=self._device)
+        criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
         self._model.train()
         total_loss = 0.0
         n = 0

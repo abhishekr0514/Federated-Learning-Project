@@ -77,6 +77,19 @@ TEXT_NBME_V1 = TaskFederationSpec(
     ),
 )
 
+ECG_REPORT_V1 = TaskFederationSpec(
+    federation_id="medshield.fl.ecg_report.v1",
+    task_id="medshield.ecg_report.ptbxl.proxy_superclass",
+    architecture_id="medshield.ecg_report_fusion.v1",
+    architecture_version="1.0.0",
+    feature_schema_id=None,
+    feature_schema_version=None,
+    preprocessing_contract_id="medshield.ecg.ptbxl.normalization",
+    preprocessing_contract_version="1.0.0",
+    dataset_boundary="data/raw/ptb-xl paired ECG+report (NORM vs MI/STTC proxy)",
+    blocked=False,
+)
+
 GAT_MULTIMODAL_V1 = TaskFederationSpec(
     federation_id="medshield.fl.gat_multimodal.v1",
     task_id="medshield.multimodal.gat.fusion",
@@ -96,6 +109,7 @@ GAT_MULTIMODAL_V1 = TaskFederationSpec(
 
 FEDERATION_REGISTRY: dict[str, TaskFederationSpec] = {
     TABULAR_CARDIO_V1.federation_id: TABULAR_CARDIO_V1,
+    ECG_REPORT_V1.federation_id: ECG_REPORT_V1,
     ECG_PTbxl_V1.federation_id: ECG_PTbxl_V1,
     TEXT_NBME_V1.federation_id: TEXT_NBME_V1,
     GAT_MULTIMODAL_V1.federation_id: GAT_MULTIMODAL_V1,

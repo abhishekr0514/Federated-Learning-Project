@@ -54,6 +54,14 @@ async def _warm_up_ecg_report_runtime() -> None:
     except Exception as exc:
         logger.warning("ECG + Report runtime warm-up skipped: %s", type(exc).__name__)
 
+    if settings.FUSION_INFERENCE_ENABLED:
+        try:
+            from backend.app.services.gat_fusion_service import GATFusionService
+
+            GATFusionService.initialize_runtime()
+        except Exception as exc:
+            logger.warning("GAT fusion runtime warm-up skipped: %s", type(exc).__name__)
+
 
 @app.get("/health", response_model=HealthResponse, status_code=status.HTTP_200_OK, tags=["Health"])
 async def health_check():
@@ -74,15 +82,23 @@ async def health_check():
     except Exception:
         ecg_report_status = "unavailable"
 
-    # GAT is truthfully blocked until a trained checkpoint is provided
-    gat_status = "blocked_awaiting_trained_checkpoint"
-    if settings.FUSION_INFERENCE_ENABLED:
-        try:
-            from backend.app.services.gat_fusion_service import GATFusionService
-            gat_readiness = GATFusionService.get_readiness()
-            gat_status = "operational" if gat_readiness.get("ready") else "blocked_awaiting_trained_checkpoint"
-        except Exception:
-            gat_status = "unavailable"
+    gat_status = "not_ready"
+    try:
+        from backend.app.services.gat_fusion_service import GATFusionService
+
+        gat_readiness = GATFusionService.get_readiness()
+        gat_status = "operational" if gat_readiness.get("ready") else "not_ready"
+    except Exception:
+        gat_status = "unavailable"
+
+    db_status = "unknown"
+    try:
+        from backend.app.db.connectivity import verify_async_connection
+
+        db_result = await verify_async_connection()
+        db_status = "operational" if db_result.ok else "unavailable"
+    except Exception:
+        db_status = "unavailable"
 
     return HealthResponse(
         status="healthy",
@@ -93,9 +109,9 @@ async def health_check():
         components=HealthComponentStatus(
             health_check="operational",
             ecg_report_inference=ecg_report_status,
-            gat_inference="pending_implementation",
+            gat_inference=gat_status,
             fl_orchestration="pending_implementation",
-            database="configured",
+            database=db_status,
         ),
         metadata=RequestMetadata(
             request_id=req_id,

@@ -30,6 +30,7 @@ from fl.parameters.serialize import ndarrays_to_state_dict, state_dict_to_ndarra
 from fl.server.strategy_factory import build_fedavg_strategy, require_flwr_strategy
 from fl.tabular.partitions import (
     EXPECTED_DATASET_SHA256,
+    audit_partition_data,
     build_tabular_federated_partitions,
     save_partition_plan,
 )
@@ -96,6 +97,9 @@ def _centralized_baseline_same_train(
     total_epochs: int,
     seed: int,
     device,
+    lr: float = 1e-3,
+    weight_decay: float = 1e-4,
+    class_weighted_loss: bool = False,
 ) -> dict[str, Any]:
     import torch
     import torch.nn as nn
@@ -107,20 +111,32 @@ def _centralized_baseline_same_train(
     train_loader = DataLoader(CardioTabularDataset(train_x, train_y), batch_size=256, shuffle=True)
 
     model = TabularBinaryClassifier().to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-4)
-    criterion = nn.BCEWithLogitsLoss()
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
+    pos_weight = None
+    if class_weighted_loss and train_records:
+        n_pos = sum(1 for r in train_records if int(r["target"]) == 1)
+        n_neg = len(train_records) - n_pos
+        if n_pos > 0:
+            pos_weight = torch.tensor([float(n_neg / n_pos)], device=device)
+    criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 
     for _ in range(total_epochs):
         train_one_epoch(model, train_loader, optimizer, criterion, device)
 
     metrics = _evaluate_global_model(model, preprocessor, val_records, test_records, device)
-    return {"total_epochs": total_epochs, **metrics}
+    return {
+        "total_epochs": total_epochs,
+        "learning_rate": lr,
+        "weight_decay": weight_decay,
+        **metrics,
+    }
 
 
 def run_tabular_federated_experiment(
     cfg: FederationConfig,
     *,
     output_root: Path | None = None,
+    experiment_label: str | None = None,
 ) -> dict[str, Any]:
     cfg.validate()
     if not cfg.real_tabular_experiment:
@@ -139,12 +155,20 @@ def run_tabular_federated_experiment(
         seed=cfg.seed,
         num_clients=cfg.participation.num_clients,
         max_federated_train_rows=cfg.max_federated_train_rows,
+        client_partition_strategy=cfg.client_partition_strategy,
     )
 
     run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    run_dir = (output_root or (REPO_ROOT / cfg.output_dir / "tabular_cardio_runs" / run_id))
+    if output_root is not None:
+        run_dir = Path(output_root)
+    else:
+        sub = experiment_label or run_id
+        run_dir = REPO_ROOT / cfg.output_dir / "tabular_cardio_runs" / sub
     run_dir.mkdir(parents=True, exist_ok=True)
     save_partition_plan(run_dir / "partition_plan.json", plan)
+    data_audit = audit_partition_data(client_parts, val_records, test_records)
+    with (run_dir / "data_audit.json").open("w", encoding="utf-8") as f:
+        json.dump(data_audit, f, indent=2)
 
     # Preprocessor fit on combined federated train rows (protocol: train-only fit).
     all_train = [rec for part in client_parts for rec in part]
@@ -166,6 +190,7 @@ def run_tabular_federated_experiment(
                 batch_size=cfg.local_training.batch_size,
                 learning_rate=cfg.local_training.learning_rate,
                 weight_decay=cfg.local_training.weight_decay,
+                class_weighted_loss=cfg.local_training.class_weighted_loss,
                 device_name=str(device),
             )
         )
@@ -232,6 +257,9 @@ def run_tabular_federated_experiment(
         total_epochs=total_equiv_epochs,
         seed=cfg.seed + 99,
         device=device,
+        lr=cfg.local_training.learning_rate,
+        weight_decay=cfg.local_training.weight_decay,
+        class_weighted_loss=cfg.local_training.class_weighted_loss,
     )
 
     meta = FederatedCheckpointMetadata(
@@ -258,13 +286,24 @@ def run_tabular_federated_experiment(
 
     manifest = {
         "experiment": "real_tabular_federated_cardio",
+        "experiment_label": experiment_label,
+        "run_id": run_id,
         "config": cfg.to_dict(),
         "partition_plan": plan.to_dict(),
+        "data_audit": data_audit,
         "round_history": round_history,
         "parameter_l2_initial": init_l2,
         "parameter_l2_final": final_l2,
         "evaluation": eval_metrics,
         "centralized_baseline_same_train_rows": baseline,
+        "comparison_notes": {
+            "same_train_rows": True,
+            "same_preprocessor_fit": True,
+            "same_val_test_splits": True,
+            "threshold_selected_on_validation_only": True,
+            "centralized_equivalent_epochs": total_equiv_epochs,
+            "aggregation": "sample_weighted_fedavg",
+        },
         "privacy_note": "FedAvg parameter aggregation only; not differential privacy.",
         "simulation_disclaimer": plan.simulation_disclaimer,
     }

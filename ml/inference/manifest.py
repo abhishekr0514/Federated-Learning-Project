@@ -9,7 +9,7 @@ from typing import Any
 
 MANIFEST_FILENAME = "medshield_fusion_manifest.json"
 MANIFEST_VERSION = "1"
-DEFAULT_ARCHITECTURE_ID = "medshield.diagnostic_net.gat_fusion"
+DEFAULT_ARCHITECTURE_ID = "medshield.diagnostic_net.gat_ecg_report"
 DEFAULT_ARCHITECTURE_VERSION = "1.0.0"
 
 

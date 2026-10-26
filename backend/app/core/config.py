@@ -81,7 +81,7 @@ class Settings(BaseSettings):
     ECG_REPORT_INFERENCE_ENABLED: bool = Field(default=True)
 
     # Three-modality GAT fusion settings
-    FUSION_MODEL_DIR: str = Field(default="models/gat_fusion")
+    FUSION_MODEL_DIR: str = Field(default="models/gat_ecg_report")
     FUSION_INFERENCE_ENABLED: bool = Field(default=False)
 
     # Federated Learning Settings

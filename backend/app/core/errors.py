@@ -173,7 +173,18 @@ def register_exception_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(SQLAlchemyError)
     async def database_exception_handler(request: Request, exc: SQLAlchemyError):
-        logger.error(f"Database error encountered: {type(exc).__name__}", exc_info=True)
+        from backend.app.db.connectivity import database_target_summary
+
+        target = database_target_summary()
+        logger.error(
+            "Database error: %s target=%s@%s:%s/%s",
+            type(exc).__name__,
+            target.get("username"),
+            target.get("host"),
+            target.get("port"),
+            target.get("database"),
+            exc_info=True,
+        )
         return build_error_response(
             code="DATABASE_ERROR",
             message="A database operation error occurred.",

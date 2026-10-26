@@ -149,9 +149,17 @@ def compute_tabular_metrics(
 
     y_pred = (y_prob >= threshold).astype(int)
     rates = compute_confusion_and_rates(y_true, y_pred)
+    cm = rates["confusion_matrix"]
+    n = cm["tp"] + cm["fp"] + cm["fn"] + cm["tn"]
+    accuracy = float((cm["tp"] + cm["tn"]) / n) if n else float("nan")
+    balanced_accuracy = float((rates["sensitivity"] + rates["specificity"]) / 2.0)
 
     out: dict[str, Any] = {
         "applied_threshold": float(threshold),
+        "accuracy": accuracy,
+        "balanced_accuracy": balanced_accuracy,
+        "n_samples": int(n),
+        "positive_rate": float(np.mean(y_true)) if n else float("nan"),
         "auroc": _compute_auroc(y_true, y_prob),
         "auprc": _compute_auprc(y_true, y_prob),
         "precision": rates["precision"],

@@ -17,12 +17,15 @@ if str(REPO_ROOT) not in sys.path:
 
 from fl.adapters.ecg import ecg_federation_readiness
 from fl.adapters.gat import gat_federation_readiness
+from fl.adapters.ecg_report_federation import ecg_report_federation_readiness
 from fl.adapters.tabular import tabular_federation_readiness
 from fl.adapters.text import nbme_federation_readiness
 from fl.aggregation.fedavg import weighted_fedavg
 from fl.checkpoints import FederatedCheckpointMetadata, save_federated_checkpoint
 from fl.client.adapter import SyntheticInfrastructureAdapter
 from fl.config import FederationConfig, default_tabular_infrastructure_config, load_federation_config
+from fl.training.ecg_report_federated import run_ecg_report_federated_experiment
+from fl.training.ecg_report_gat_head_federated import run_ecg_report_gat_head_federated_experiment
 from fl.training.tabular_federated import run_tabular_federated_experiment
 from fl.errors import FederatedLearningError, FlowerUnavailableError
 from fl.registry import federation_summary
@@ -64,6 +67,7 @@ def cmd_readiness(config_path: Path | None) -> int:
         "ecg": ecg_federation_readiness(),
         "nbme": nbme_federation_readiness(),
         "gat": gat_federation_readiness(),
+        "ecg_report": ecg_report_federation_readiness(),
         "training_auto_start": False,
         "full_cohort_training": "deferred",
     }
@@ -166,6 +170,32 @@ def cmd_simulate(config_path: Path, *, confirm: bool, synthetic: bool) -> int:
     return 0
 
 
+def cmd_run_ecg_report_gat_head(config_path: Path, *, confirm: bool) -> int:
+    if not confirm:
+        print("Refusing GAT-head federated experiment without --confirm-run", file=sys.stderr)
+        return 2
+    cfg = load_federation_config(config_path)
+    if cfg.federated_trainable_scope != "gat_head":
+        print("Config must set federated_trainable_scope=gat_head", file=sys.stderr)
+        return 2
+    result = run_ecg_report_gat_head_federated_experiment(cfg)
+    print(json.dumps(result, indent=2))
+    return 0
+
+
+def cmd_run_ecg_report(config_path: Path, *, confirm: bool) -> int:
+    if not confirm:
+        print("Refusing ECG+report federated experiment without --confirm-run", file=sys.stderr)
+        return 2
+    cfg = load_federation_config(config_path)
+    if not cfg.real_ecg_report_experiment:
+        print("Config must set real_ecg_report_experiment=true", file=sys.stderr)
+        return 2
+    result = run_ecg_report_federated_experiment(cfg)
+    print(json.dumps(result, indent=2))
+    return 0
+
+
 def cmd_run_tabular(config_path: Path, *, confirm: bool) -> int:
     if not confirm:
         print("Refusing tabular federated experiment without --confirm-run", file=sys.stderr)
@@ -198,6 +228,14 @@ def main(argv: list[str] | None = None) -> int:
     p_tab.add_argument("config", type=Path)
     p_tab.add_argument("--confirm-run", action="store_true")
 
+    p_ecg = sub.add_parser("run-ecg-report-experiment", help="PTB-XL ECG+report FL (fusion head)")
+    p_ecg.add_argument("config", type=Path)
+    p_ecg.add_argument("--confirm-run", action="store_true")
+
+    p_gat = sub.add_parser("run-ecg-report-gat-head-experiment", help="PTB-XL GAT-head FL on frozen embeddings")
+    p_gat.add_argument("config", type=Path)
+    p_gat.add_argument("--confirm-run", action="store_true")
+
     args = parser.parse_args(argv)
     try:
         if args.command == "validate-config":
@@ -212,6 +250,10 @@ def main(argv: list[str] | None = None) -> int:
             )
         if args.command == "run-tabular-experiment":
             return cmd_run_tabular(args.config, confirm=args.confirm_run)
+        if args.command == "run-ecg-report-experiment":
+            return cmd_run_ecg_report(args.config, confirm=args.confirm_run)
+        if args.command == "run-ecg-report-gat-head-experiment":
+            return cmd_run_ecg_report_gat_head(args.config, confirm=args.confirm_run)
     except FederatedLearningError as exc:
         print(json.dumps({"ok": False, "error": str(exc)}, indent=2), file=sys.stderr)
         return 1

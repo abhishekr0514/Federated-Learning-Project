@@ -6,6 +6,9 @@ import numpy as np
 import pytest
 import torch
 
+import json
+from pathlib import Path
+
 from ml.fusion.errors import FusionInputError
 from ml.fusion.pipeline import (
     MODALITY_CONTRACTS,
@@ -16,6 +19,15 @@ from ml.models.ecg_embedding_provider import ECGEmbeddingProvider
 from ml.models.gnn_fusion import MedShieldDiagnosticNet
 from ml.training.linkage_gate import evaluate_three_modality_gate
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _ecg_report_artifact_paths() -> tuple[Path, Path]:
+    manifest = json.loads((REPO_ROOT / "models/ecg_report_fusion/manifest.json").read_text(encoding="utf-8"))
+    ckpt = REPO_ROOT / manifest["checkpoint_path"]
+    norm = REPO_ROOT / manifest["normalization_path"]
+    return ckpt, norm
+
 
 def test_modality_contracts_dimensions():
     assert MODALITY_CONTRACTS["ecg"].dimension == ECG_EMBED_DIM == 128
@@ -24,9 +36,12 @@ def test_modality_contracts_dimensions():
 
 
 def test_ecg_embedding_provider_extraction():
+    ckpt, norm = _ecg_report_artifact_paths()
+    if not ckpt.is_file() or not norm.is_file():
+        pytest.skip("ECG-report encoder artifacts not present")
     provider = ECGEmbeddingProvider.from_checkpoint(
-        checkpoint_path="models/ecg_report_fusion/best_checkpoint.pt",
-        normalization_path="models/ecg_report_fusion/normalization.json",
+        checkpoint_path=ckpt,
+        normalization_path=norm,
     )
     assert provider.encoder is not None
     assert provider.encoder.training is False
@@ -41,18 +56,24 @@ def test_ecg_embedding_provider_extraction():
 
 
 def test_ecg_embedding_provider_rejects_wrong_shape():
+    ckpt, norm = _ecg_report_artifact_paths()
+    if not ckpt.is_file() or not norm.is_file():
+        pytest.skip("ECG-report encoder artifacts not present")
     provider = ECGEmbeddingProvider.from_checkpoint(
-        checkpoint_path="models/ecg_report_fusion/best_checkpoint.pt",
-        normalization_path="models/ecg_report_fusion/normalization.json",
+        checkpoint_path=ckpt,
+        normalization_path=norm,
     )
     with pytest.raises(ValueError, match=r"Expected ECG shape \(12, 1000\)"):
         provider.encode(np.zeros((8, 1000)))
 
 
 def test_ecg_embedding_provider_rejects_nan():
+    ckpt, norm = _ecg_report_artifact_paths()
+    if not ckpt.is_file() or not norm.is_file():
+        pytest.skip("ECG-report encoder artifacts not present")
     provider = ECGEmbeddingProvider.from_checkpoint(
-        checkpoint_path="models/ecg_report_fusion/best_checkpoint.pt",
-        normalization_path="models/ecg_report_fusion/normalization.json",
+        checkpoint_path=ckpt,
+        normalization_path=norm,
     )
     bad_sig = np.zeros((12, 1000), dtype=np.float32)
     bad_sig[0, 10] = float("nan")
@@ -100,13 +121,11 @@ def test_multimodal_gat_pipeline_rejects_dimension_mismatch():
         pipe.build_fusion_input(ecg_emb=[0.1] * 64)  # 64 instead of 128
 
 
-def test_gat_pipeline_readiness_blocked_truthfully():
+def test_gat_pipeline_readiness_two_modality_contract():
     report = MultimodalGATPipeline.assess_gat_pipeline_readiness()
     assert report.ready is False
-    assert report.linkage_gate_allowed is False
-    assert report.linkage_gate_verdict == "BLOCKED"
-    assert len(report.blockers) > 0
-    assert len(report.required_to_unblock) > 0
-    # Does not claim GAT is trained or operational
+    assert report.architecture_id == "medshield.diagnostic_net.gat_ecg_report"
+    assert report.embedding_contracts == {"ecg": 128, "clinical_text": 128}
+    assert "tabular" not in report.embedding_contracts
     safe_dict = report.to_safe_dict()
     assert safe_dict["ready"] is False

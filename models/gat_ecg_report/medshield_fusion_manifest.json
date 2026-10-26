@@ -1,0 +1,15 @@
+{
+  "manifest_version": "1",
+  "checkpoint_relative_path": "best_gat_checkpoint.pt",
+  "architecture_id": "medshield.diagnostic_net.gat_ecg_report",
+  "architecture_version": "1.0.0",
+  "model_version_tag": "gat-ecg-report-20261025T182109Z",
+  "target_definition": "PTB-XL proxy: NORM (0) vs MI/STTC (1). NOT validated clinical heart-disease diagnosis.",
+  "prediction_type": "proxy_evaluation",
+  "require_trained_checkpoint": true,
+  "encoder_manifest_path": "models/ecg_report_fusion/manifest.json",
+  "modalities": {
+    "ecg": 128,
+    "clinical_text": 128
+  }
+}

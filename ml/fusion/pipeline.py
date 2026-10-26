@@ -32,6 +32,8 @@ from ml.training.linkage_gate import evaluate_three_modality_gate, LinkageGateRe
 
 logger = logging.getLogger(__name__)
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
 
 @dataclass(frozen=True)
 class ModalityContract:
@@ -119,28 +121,35 @@ class MultimodalGATPipeline:
 
     @staticmethod
     def assess_gat_pipeline_readiness() -> GATReadinessReport:
-        """
-        Assess whether three-modality GAT training and inference can be executed safely.
-        """
-        gate = evaluate_three_modality_gate()
-        blockers: list[str] = []
-        required: list[str] = []
+        """Assess two-modality ECG+report GAT readiness (PTB-XL in-cohort pairing)."""
+        from ml.fusion.ecg_report_gat_gate import evaluate_ecg_report_gat_gate
+        from ml.models.gat_ecg_report_fusion import ARCHITECTURE_ID as GAT2_ID
+        from ml.models.gat_ecg_report_fusion import ARCHITECTURE_VERSION as GAT2_VER
 
-        if not gate.allowed:
-            blockers.append(
-                f"Data linkage gate: {gate.verdict} — No cross-cohort patient linkage between PTB-XL, cardio_train, and NBME."
-            )
-            required.append(
-                "Authorized multimodal dataset with shared subject/encounter keys across all 3 modalities (e.g. MIMIC-IV-ECG + MIMIC-IV)."
-            )
-            required.append("Clinically verified unified CVD target label across modalities.")
-            required.append("Patient-disjoint train/validation/test split protocol on linked records.")
+        gate = evaluate_ecg_report_gat_gate()
+        blockers: list[str] = list(gate.blockers)
+        required: list[str] = gate.required_to_unblock()
 
-        blockers.append("GAT model weights not trained on linked data (research architecture only).")
-        required.append("Execution of supervised multimodal training with verified loss convergence.")
+        if gate.allowed:
+            deploy = REPO_ROOT / "models" / "gat_ecg_report"
+            deploy_ok = False
+            try:
+                from ml.inference.manifest import load_fusion_manifest
+
+                m = load_fusion_manifest(deploy)
+                deploy_ok = m.resolve_checkpoint(deploy).is_file()
+            except Exception:
+                deploy_ok = False
+            if not deploy_ok:
+                required.append("Train and deploy medshield.diagnostic_net.gat_ecg_report checkpoint.")
+            else:
+                required.append("Set FUSION_INFERENCE_ENABLED=true after verified trained checkpoint.")
 
         return GATReadinessReport(
             ready=False,
+            architecture_id=GAT2_ID,
+            architecture_version=GAT2_VER,
+            embedding_contracts={"ecg": ECG_EMBED_DIM, "clinical_text": TEXT_EMBED_DIM},
             linkage_gate_allowed=gate.allowed,
             linkage_gate_verdict=gate.verdict,
             blockers=blockers,

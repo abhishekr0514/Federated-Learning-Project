@@ -20,6 +20,7 @@ class LocalTrainingConfig:
     batch_size: int = 256
     learning_rate: float = 1e-3
     weight_decay: float = 1e-4
+    class_weighted_loss: bool = False
 
     def validate(self) -> None:
         if self.local_epochs < 0:
@@ -72,9 +73,22 @@ class FederationConfig:
     auto_start_training: bool = False
     synthetic_infrastructure_smoke: bool = False
     real_tabular_experiment: bool = False
+    real_ecg_report_experiment: bool = False
     dataset_path: str = "data/datasets/cardio_train.csv"
     expected_dataset_sha256: str = "21a705d23381b0dfd6a6416da701b490744f1fc3b47e9ff3db3968c420ffa10c"
     max_federated_train_rows: int | None = None
+    # contiguous_record_id (default) | stratified_round_robin — simulation-only client layout
+    client_partition_strategy: str = "contiguous_record_id"
+    ptbxl_root: str = "data/raw/ptb-xl"
+    expected_ptbxl_database_sha256: str = (
+        "7600de9c1b27d181d850b3c6038a35d7c3ddb6bb33b702e3a20252a6859d216b"
+    )
+    encoder_manifest_path: str = "models/ecg_report_fusion/manifest.json"
+    federated_trainable_scope: str = "fusion_head"
+    max_federated_train_records: int | None = None
+    ecg_report_experiment_subdir: str = "ecg_report_experiments"
+    eval_max_val_records: int | None = None
+    eval_max_test_records: int | None = None
 
     REQUIRED_FIELDS = (
         "federation_id",
@@ -118,21 +132,48 @@ class FederationConfig:
                 "auto_start_training must remain false; use explicit runner flags to start simulation."
             )
 
-        if self.num_rounds > 0 and not (
-            self.synthetic_infrastructure_smoke or self.real_tabular_experiment
-        ):
+        real_flags = (
+            self.synthetic_infrastructure_smoke,
+            self.real_tabular_experiment,
+            self.real_ecg_report_experiment,
+        )
+        if sum(1 for f in real_flags if f) > 1:
             raise FederationConfigError(
-                "num_rounds > 0 requires synthetic_infrastructure_smoke or real_tabular_experiment."
+                "At most one of synthetic_infrastructure_smoke, real_tabular_experiment, "
+                "real_ecg_report_experiment may be true."
             )
-        if self.real_tabular_experiment and self.synthetic_infrastructure_smoke:
+        if self.num_rounds > 0 and not any(real_flags):
             raise FederationConfigError(
-                "real_tabular_experiment and synthetic_infrastructure_smoke are mutually exclusive."
+                "num_rounds > 0 requires synthetic_infrastructure_smoke, "
+                "real_tabular_experiment, or real_ecg_report_experiment."
             )
         if self.real_tabular_experiment:
             if self.federation_id != "medshield.fl.tabular_cardio.v1":
                 raise FederationConfigError("real_tabular_experiment only supports tabular cardio federation.")
             if self.max_federated_train_rows is not None and self.max_federated_train_rows < 100:
                 raise FederationConfigError("max_federated_train_rows too small for a meaningful experiment.")
+            allowed_partition = frozenset({"contiguous_record_id", "stratified_round_robin"})
+            if self.client_partition_strategy not in allowed_partition:
+                raise FederationConfigError(
+                    f"client_partition_strategy must be one of {sorted(allowed_partition)}"
+                )
+        if self.real_ecg_report_experiment:
+            if self.federation_id != "medshield.fl.ecg_report.v1":
+                raise FederationConfigError("real_ecg_report_experiment only supports medshield.fl.ecg_report.v1.")
+            allowed_scopes = frozenset(
+                {"fusion_head", "fusion_head_and_ecg_encoder", "gat_head"}
+            )
+            if self.federated_trainable_scope not in allowed_scopes:
+                raise FederationConfigError(
+                    f"federated_trainable_scope must be one of {sorted(allowed_scopes)}"
+                )
+            allowed_ecg_partition = frozenset({"stratified_round_robin", "contiguous_patient_id"})
+            if self.client_partition_strategy not in allowed_ecg_partition:
+                raise FederationConfigError(
+                    f"ECG+report client_partition_strategy must be one of {sorted(allowed_ecg_partition)}"
+                )
+            if self.max_federated_train_records is not None and self.max_federated_train_records < 8:
+                raise FederationConfigError("max_federated_train_records too small for ECG+report FL.")
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)

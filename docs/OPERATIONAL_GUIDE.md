@@ -1,6 +1,6 @@
 # MedShield-FL — Operational Guide
 
-> **Status**: ECG + Clinical Report inference is operational. Three-modality GAT fusion is implemented but blocked pending a trained checkpoint (see §8).
+> **Status**: ECG + Clinical Report inference is operational. Two-modality GAT (ECG + report embeddings) is trained and deployed under `models/gat_ecg_report/`; enable with `FUSION_INFERENCE_ENABLED=true` (see §5).
 
 ---
 
@@ -11,7 +11,7 @@ MedShield-FL exposes two separate inference paths:
 | Path | Architecture ID | Status |
 |------|----------------|--------|
 | **ECG + Report** (Path A) | `medshield.ecg_report_fusion.v1` | ✅ Operational (trained checkpoint loaded) |
-| **Three-Modality GAT** (Path B) | `medshield.diagnostic_net.gat_fusion` | 🔴 Blocked — awaiting trained checkpoint |
+| **Two-Modality GAT** (Path B) | `medshield.diagnostic_net.gat_ecg_report` | ✅ Trained checkpoint deployed; inference gated by `FUSION_INFERENCE_ENABLED` |
 
 ### Path A — ECG + Clinical Report Fusion
 ```
@@ -24,14 +24,16 @@ Clinical Report (text string)               ├─► Concat (256-d) → Linear 
 - **Research proxy task**: PTB-XL NORM (class 0) vs MI/STTC superclasses (class 1)
 - **Not validated** for clinical diagnosis
 
-### Path B — Three-Modality GAT Fusion (research architecture)
+### Path B — Two-Modality GAT Fusion (research architecture)
 ```
-ECG embedding (128-d)          ┐
-Clinical text embedding (128-d)├─► 3-node fully-connected graph
-Tabular embedding (64-d)       ┘       └─► GATConv × 2 → Flatten → MLP → binary logit
+ECG embedding (128-d) ──► node 0 ──┐
+                                   ├── fully connected 2-node graph
+Clinical report (128-d) ► node 1 ──┘
+        └─► linear proj (128→64) → GATConv × 2 (4 heads, residual) → mean pool → MLP → 2-class logits
 ```
-- Requires multimodal dataset with aligned ECG + clinical text + tabular records per patient
-- Data linkage gate: **BLOCKED** (no cross-cohort patient linkage available between PTB-XL, cardio_train, NBME)
+- Embeddings come from the **frozen** ECG-report encoder (`medshield.ecg_report_fusion.v1`) on PTB-XL in-cohort pairs (`ecg_id` + machine `report` field).
+- **Research proxy task**: same binary target as Path A — PTB-XL NORM (0) vs MI/STTC (1). Not clinical diagnosis.
+- Legacy three-modality GAT (`medshield.diagnostic_net.gat_fusion`) remains in code for reference only; runtime rejects its manifest.
 
 ---
 
@@ -64,17 +66,12 @@ POST /api/v1/gat-fusion/evaluate
 Authorization: Bearer <JWT>
 
 {
-  "ecg_embedding":     [<float> × 128],  // output of ECGEmbeddingProvider
-  "text_embedding":    [<float> × 128],  // output of ClinicalTextEncodingPipeline
-  "tabular_embedding": [<float> × 64],   // output of NeuralTabularEncoder
-  "idempotency_key":   "<str>"           // optional
+  "ecg_embedding":  [<float> × 128],  // from authorized ECG-report encoder
+  "text_embedding": [<float> × 128],  // from authorized clinical-text encoder
+  "idempotency_key": "<str>"          // optional
 }
 ```
-At least one embedding must be provided. Missing modalities are zero-padded + availability-masked.
-
-### Tabular Feature Schema (`medshield.tabular.cardio_survey v1.0.0`)
-10 structured features (see `ml/tabular/feature_schema.py`):
-`age, sex, chest_pain_type, resting_bp, cholesterol, fasting_bs, resting_ecg, max_hr, exercise_angina, st_slope`
+Both embeddings are **required**. Tabular inputs are not accepted on this path.
 
 ---
 
@@ -88,11 +85,13 @@ At least one embedding must be provided. Missing modalities are zero-padded + av
 | Normalization | `models/ecg_report_fusion/normalization.json` | Per-lead mean/std from PTB-XL training split |
 | Text encoder | HuggingFace cache | `emilyalsentzer/Bio_ClinicalBERT` (local cache) |
 
-### Path B — GAT Fusion
+### Path B — GAT Fusion (ECG + report)
 | Artifact | Path | Description |
 |----------|------|-------------|
-| Checkpoint | `models/gat_fusion/best_checkpoint.pt` | **Does not exist yet — training required** |
-| Manifest | `models/gat_fusion/medshield_fusion_manifest.json` | **Required before enabling** |
+| Checkpoint | `models/gat_ecg_report/best_gat_checkpoint.pt` | Trained GAT fusion head (PyTorch Geometric) |
+| Manifest | `models/gat_ecg_report/medshield_fusion_manifest.json` | Architecture ID, modality contract, encoder manifest pointer |
+| Training run | `data/processed/gat_ecg_report/runs/20261025T182109Z/` | Metrics, splits, encoder provenance (`report.json`) |
+| Encoder (frozen) | `models/ecg_report_fusion/` | Supplies 128-d ECG + 128-d text embeddings during training |
 
 ---
 
@@ -107,20 +106,71 @@ Get-Content data\processed\ecg_report_fusion\runs\20261025T125307Z\report.json
 .\.venv\Scripts\python.exe -m ml.training.train_ecg_report_fusion --config configs\ecg_report_fusion.yaml
 ```
 
-### Path B — GAT Fusion (NOT YET TRAINED — gated)
+### Path B — Two-Modality GAT (PTB-XL paired ECG + report)
 ```powershell
-# Check what is blocking training
-.\.venv\Scripts\python.exe -c "from ml.training.linkage_gate import evaluate_three_modality_gate; r = evaluate_three_modality_gate(); print(r.to_dict())"
+# Pairing + encoder gate (must be ALLOWED before training)
+py -c "from ml.fusion.ecg_report_gat_gate import evaluate_ecg_report_gat_gate; g=evaluate_ecg_report_gat_gate(); print(g)"
 
-# Training is currently BLOCKED. Blockers:
-# 1. No aligned multimodal dataset (PTB-XL ECG + clinical text + tabular per patient)
-# 2. No cross-cohort patient linkage audit verdict CONDITIONAL_GO
-# Required dataset: MIMIC-IV-ECG + MIMIC-IV (requires PhysioNet credentialing)
+# Smoke test (small subset, CPU)
+py -m ml.training.train_gat_ecg_report --smoke --device cpu
+
+# Bounded research run (example: cap train records, 8 epochs, CPU)
+py -m ml.training.train_gat_ecg_report --device cpu --epochs 8 --batch-size 32 --max-train 1500 --seed 42
+
+# Full run (remove --max-train when resources allow)
+py -m ml.training.train_gat_ecg_report --device cuda --epochs 20 --batch-size 64 --seed 42
 ```
+
+**Latest held-out test metrics** (run `20261025T182109Z`, n=1838, patient-disjoint PTB-XL split):
+- GAT: accuracy ≈ 88.0%, AUROC 0.951, F1 0.882, sensitivity 0.891, specificity 0.869
+- ECG-report baseline (same embeddings, linear head): AUROC 0.946, F1 0.776, sensitivity 0.662
+
+These are **research-proxy** results on PTB-XL only, not clinical validation.
 
 ---
 
-## 5. Configuration Flags
+## 5. PostgreSQL, Migrations, and Development Login
+
+The backend uses **PostgreSQL only** (`postgresql+asyncpg`). Connection settings come from `POSTGRES_*` in `.env` (the assembled `DATABASE_URL` in `.env` is informational; the app rebuilds the URL from `POSTGRES_*`).
+
+### Diagnose connectivity (no secrets printed)
+```powershell
+cd C:\Federated-Learning-Project
+py scripts\check_postgres_connection.py
+```
+
+If you see `password authentication failed for user "medshield_admin"`, the PostgreSQL role password does not match `POSTGRES_PASSWORD` in `.env`. Fix one of:
+- Update `POSTGRES_PASSWORD` in `.env` to match the existing role, **or**
+- Sync the role (requires local `postgres` superuser password, never commit it):
+```powershell
+$env:POSTGRES_SUPERUSER_PASSWORD = Read-Host "postgres superuser password" -AsSecureString | `
+  ForEach-Object { [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($_)) }
+py scripts\bootstrap_postgres_dev_role.py
+Remove-Item Env:POSTGRES_SUPERUSER_PASSWORD
+```
+
+### Apply schema (Alembic)
+```powershell
+py -m alembic upgrade head
+```
+
+### Seed development accounts (idempotent)
+```powershell
+py scripts\seed_postgres_dev.py
+```
+Creates `dr_metro@metro.org` (CLINICIAN) and `patient_alice@example.com` (PATIENT). You choose passwords interactively on first create.
+
+### Login API contract
+```powershell
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/v1/auth/login" -Method Post `
+  -ContentType "application/json" `
+  -Body '{"email":"dr_metro@metro.org","password":"<your-seed-password>"}'
+```
+Response envelope: `{ "data": { "access_token", "refresh_token", "token_type", "expires_in" } }`.
+
+---
+
+## 6. Configuration Flags
 
 All flags in `.env` (or environment variables):
 
@@ -128,19 +178,19 @@ All flags in `.env` (or environment variables):
 |----------|---------|-------------|
 | `ECG_REPORT_MODEL_DIR` | `models/ecg_report_fusion` | Path to ECG+Report checkpoint directory |
 | `ECG_REPORT_INFERENCE_ENABLED` | `true` | Enable ECG+Report inference |
-| `FUSION_MODEL_DIR` | `models/gat_fusion` | Path to GAT fusion checkpoint directory |
-| `FUSION_INFERENCE_ENABLED` | `false` | **Keep false until trained checkpoint is placed** |
+| `FUSION_MODEL_DIR` | `models/gat_ecg_report` | Path to two-modality GAT checkpoint directory |
+| `FUSION_INFERENCE_ENABLED` | `false` | Set `true` only after verifying trained checkpoint + manifest |
 
 ### Safe GAT Enablement Procedure
-1. Place trained checkpoint in `models/gat_fusion/`
-2. Create `models/gat_fusion/medshield_fusion_manifest.json` (see `models/medshield_fusion_manifest.example.json`)
+1. Confirm `models/gat_ecg_report/best_gat_checkpoint.pt` and `medshield_fusion_manifest.json` exist (`checkpoint_trained: true` in readiness).
+2. Run `py tests\verify_gat_forward_pass.py` (direct forward pass, no HTTP).
 3. Set `FUSION_INFERENCE_ENABLED=true` in `.env`
 4. Restart backend
-5. Verify: `GET /api/v1/gat-fusion/readiness` returns `ready: true`
+5. Verify: `GET /api/v1/gat-fusion/readiness` → `ready: true`, `pairing_gate_verdict: ALLOWED`
 
 ---
 
-## 6. Starting the Backend (PowerShell)
+## 7. Starting the Backend (PowerShell)
 
 ```powershell
 # From project root
@@ -178,7 +228,8 @@ Invoke-WebRequest -Uri "http://127.0.0.1:8000/api/v1/gat-fusion/readiness" -UseB
 
 ### Python — Direct Forward Pass Verification (no HTTP required)
 ```powershell
-.\.venv\Scripts\python.exe tests\verify_forward_pass.py
+py tests\verify_forward_pass.py          # ECG + report end-to-end encoder
+py tests\verify_gat_forward_pass.py      # two-modality GAT on 128-d embeddings
 ```
 
 ### Python — Full Integration Test (requires running backend)
@@ -268,7 +319,7 @@ Content-Type: application/json
 
 1. **PTB-XL proxy task only**: The ECG+Report model predicts NORM vs MI/STTC on PTB-XL, not a clinically validated diagnostic
 2. **Uncalibrated probabilities**: Sigmoid/softmax outputs are raw model scores, not calibrated risk estimates
-3. **No multimodal alignment**: The GAT fusion requires aligned ECG + clinical text + tabular data per patient — not yet available
+3. **GAT uses frozen encoder embeddings**: GAT does not re-read raw waveforms at inference unless clients call Path A encoders first; API expects authorized 128-d vectors
 4. **10-class PTB-XL label space**: Collapsed to binary for research; many clinically important classes are excluded
 5. **No external validation**: Model has not been validated on external datasets beyond PTB-XL test split
 6. **CPU-only**: Inference runs on CPU; GPU would reduce latency significantly
