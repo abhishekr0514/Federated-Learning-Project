@@ -64,7 +64,6 @@ data/processed/*
 !data/processed/.gitkeep
 data/manifests/*
 !data/manifests/.gitkeep
-*.pt
 *.pth
 *.onnx
 *.bin
