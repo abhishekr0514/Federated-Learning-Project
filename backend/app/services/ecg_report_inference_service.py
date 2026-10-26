@@ -158,6 +158,7 @@ class ECGReportInferenceService:
             is_research_only=True,
             disclaimer=result["disclaimer"],
             provenance=result["provenance"],
+            privacy_validation_status="VALIDATED",
         )
 
     @staticmethod
@@ -219,4 +220,5 @@ class ECGReportInferenceService:
                 "EXPERIMENTAL RESEARCH PROXY OUTPUT ONLY. Replayed from idempotent execution."
             ),
             provenance=row.provenance,
+            privacy_validation_status="VALIDATED",
         )

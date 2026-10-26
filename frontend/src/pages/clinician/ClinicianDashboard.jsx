@@ -1,6 +1,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { ClinicianLayout } from '../../layouts/ClinicianLayout';
-import { apiRequest, ApiError } from '../../services/api';
+import {
+  apiRequest,
+  ApiError,
+  apiUploadClinicalDocument,
+  apiProcessClinicalDocument,
+} from '../../services/api';
+import { DiagnosticWorkspace } from '../../components/DiagnosticWorkspace';
+import { ModelStatusPanel } from '../../components/ModelStatusPanel';
+import { FederatedLearningPanel } from '../../components/FederatedLearningPanel';
 import {
   ClinicalEmptyState,
   ClinicalNotImplemented,
@@ -28,6 +36,9 @@ import {
   Search,
   CheckCircle,
   FileSpreadsheet,
+  Upload,
+  Play,
+  Sparkles,
 } from 'lucide-react';
 
 export function ClinicianDashboard() {
@@ -83,6 +94,70 @@ export function ClinicianDashboard() {
 
   // Diagnosis data
   const [diagnosisData, setDiagnosisData] = useState(null);
+
+  // Document upload modal state
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [uploadFile, setUploadFile] = useState(null);
+  const [uploadPatientId, setUploadPatientId] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState(null);
+  const [uploadSuccess, setUploadSuccess] = useState(null);
+  const [processingDocId, setProcessingDocId] = useState(null);
+
+  const handleUploadDocument = async (e) => {
+    e.preventDefault();
+    if (!uploadFile) {
+      setUploadError('Please select a medical document to upload.');
+      return;
+    }
+
+    setUploading(true);
+    setUploadError(null);
+    setUploadSuccess(null);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', uploadFile);
+      if (uploadPatientId) {
+        formData.append('patient_id', uploadPatientId);
+      }
+
+      const res = await apiUploadClinicalDocument(formData);
+      setUploadSuccess(`Document ${uploadFile.name} uploaded successfully.`);
+      setUploadFile(null);
+      fetchDocuments();
+
+      // Trigger automatic process job
+      const newDocId = res?.document?.id || res?.data?.id || res?.id;
+      if (newDocId) {
+        setProcessingDocId(newDocId);
+        try {
+          await apiProcessClinicalDocument(newDocId);
+          fetchDocuments();
+        } catch (procErr) {
+          console.warn('Post-upload processing job error:', procErr);
+        } finally {
+          setProcessingDocId(null);
+        }
+      }
+    } catch (err) {
+      setUploadError(err.message || 'Failed to upload document');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleProcessDocument = async (docId) => {
+    setProcessingDocId(docId);
+    try {
+      await apiProcessClinicalDocument(docId);
+      fetchDocuments();
+    } catch (err) {
+      console.error('Document processing failed:', err);
+    } finally {
+      setProcessingDocId(null);
+    }
+  };
 
   // Fetch overview telemetry
   const fetchOverview = useCallback(async () => {
@@ -305,6 +380,42 @@ export function ClinicianDashboard() {
       ========================================================================= */}
       {activeTab === 'dashboard' && (
         <div>
+          {/* Live Model Architecture Readiness Diagnostics */}
+          <ModelStatusPanel />
+
+          {/* Quick Launch Diagnostic Studio Action Banner */}
+          <div className="card" style={{
+            marginBottom: '1.5rem',
+            background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.1) 0%, rgba(37, 99, 235, 0.05) 100%)',
+            border: '1px solid rgba(6, 182, 212, 0.3)',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: '1rem',
+          }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Sparkles size={18} className="text-accent" />
+                <strong style={{ fontSize: '1rem', color: '#f8fafc' }}>
+                  Interactive Multimodal Diagnostic Studio is Operational
+                </strong>
+              </div>
+              <p style={{ margin: '4px 0 0', fontSize: '0.8125rem', color: '#94a3b8' }}>
+                Analyze 12-lead ECG waveforms and clinical narratives using the verified PTB-XL multimodal neural network with real-time privacy masking.
+              </p>
+            </div>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => setActiveTab('inference')}
+              style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+            >
+              <Activity size={16} />
+              Open Diagnostic Studio
+            </button>
+          </div>
+
           {loading && !overview ? (
             <ClinicalLoading message="Loading clinician profile and telemetry..." />
           ) : overview ? (
@@ -462,6 +573,23 @@ export function ClinicianDashboard() {
             </>
           ) : null}
         </div>
+      )}
+
+      {/* =========================================================================
+          TAB: DIAGNOSTIC STUDIO (MULTIMODAL INFERENCE)
+      ========================================================================= */}
+      {activeTab === 'inference' && (
+        <DiagnosticWorkspace
+          assignedPatients={patients}
+          onPredictionComplete={() => fetchDiagnosis()}
+        />
+      )}
+
+      {/* =========================================================================
+          TAB: FEDERATED LEARNING PANEL
+      ========================================================================= */}
+      {activeTab === 'federated' && (
+        <FederatedLearningPanel />
       )}
 
       {/* =========================================================================
@@ -1058,7 +1186,7 @@ export function ClinicianDashboard() {
       ========================================================================= */}
       {activeTab === 'documents' && (
         <div className="card">
-          <div className="card-header" style={{ justifyContent: 'space-between' }}>
+          <div className="card-header" style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
               <div className="card-icon text-warning">
                 <FileText size={20} />
@@ -1070,6 +1198,20 @@ export function ClinicianDashboard() {
                 </span>
               </div>
             </div>
+
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={() => {
+                setShowUploadModal(true);
+                setUploadError(null);
+                setUploadSuccess(null);
+              }}
+              style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+            >
+              <Upload size={14} />
+              Upload Medical Document
+            </button>
           </div>
 
           {loading ? (
@@ -1113,13 +1255,23 @@ export function ClinicianDashboard() {
                         <td>{d.entities_detected_count}</td>
                         <td>{d.created_at ? new Date(d.created_at).toLocaleDateString() : 'N/A'}</td>
                         <td>
-                          <button
-                            className="btn btn-secondary"
-                            style={{ padding: '4px 10px', fontSize: '0.75rem' }}
-                            onClick={() => fetchDocumentDetail(d.id)}
-                          >
-                            Inspect Metadata
-                          </button>
+                          <div style={{ display: 'flex', gap: '4px' }}>
+                            <button
+                              className="btn btn-secondary"
+                              style={{ padding: '4px 8px', fontSize: '0.75rem' }}
+                              onClick={() => fetchDocumentDetail(d.id)}
+                            >
+                              Metadata
+                            </button>
+                            <button
+                              className="btn btn-primary"
+                              style={{ padding: '4px 8px', fontSize: '0.75rem' }}
+                              disabled={processingDocId === d.id}
+                              onClick={() => handleProcessDocument(d.id)}
+                            >
+                              {processingDocId === d.id ? 'Processing...' : 'Run Privacy Job'}
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -1150,6 +1302,128 @@ export function ClinicianDashboard() {
                 </button>
               </div>
             </>
+          )}
+
+          {/* Document Upload Modal */}
+          {showUploadModal && (
+            <div
+              style={{
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                background: 'rgba(0,0,0,0.7)',
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                zIndex: 1000,
+              }}
+            >
+              <div
+                className="card"
+                style={{ width: '520px', maxWidth: '90vw', background: '#0f172a', border: '1px solid #334155' }}
+              >
+                <div className="card-header" style={{ justifyContent: 'space-between' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Upload size={18} className="text-accent" />
+                    <div className="card-title">Upload Clinical Document</div>
+                  </div>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => {
+                      setShowUploadModal(false);
+                      setUploadFile(null);
+                      setUploadError(null);
+                      setUploadSuccess(null);
+                    }}
+                  >
+                    Close
+                  </button>
+                </div>
+
+                <form onSubmit={handleUploadDocument} style={{ padding: '1rem' }}>
+                  {uploadError && (
+                    <div className="notice-banner" style={{ borderLeftColor: 'var(--danger)', marginBottom: '1rem', fontSize: '0.75rem' }}>
+                      <AlertCircle size={14} className="text-danger" style={{ display: 'inline', marginRight: '4px' }} />
+                      {uploadError}
+                    </div>
+                  )}
+
+                  {uploadSuccess && (
+                    <div className="notice-banner" style={{ borderLeftColor: 'var(--success)', marginBottom: '1rem', fontSize: '0.75rem' }}>
+                      <CheckCircle size={14} className="text-success" style={{ display: 'inline', marginRight: '4px' }} />
+                      {uploadSuccess}
+                    </div>
+                  )}
+
+                  <div className="form-group" style={{ marginBottom: '1rem' }}>
+                    <label className="form-label">
+                      Select Medical Document File (.pdf, .jpg, .jpeg, .png — max 10MB)
+                    </label>
+                    <input
+                      type="file"
+                      accept=".pdf,.jpg,.jpeg,.png"
+                      className="form-input"
+                      onChange={(e) => {
+                        const file = e.target.files && e.target.files[0];
+                        if (file) {
+                          if (file.size > 10 * 1024 * 1024) {
+                            setUploadError('File exceeds maximum size of 10 MB.');
+                            setUploadFile(null);
+                            return;
+                          }
+                          setUploadFile(file);
+                          setUploadError(null);
+                        }
+                      }}
+                      required
+                    />
+                    {uploadFile && (
+                      <span style={{ fontSize: '0.75rem', color: '#38bdf8', marginTop: '4px', display: 'block' }}>
+                        Selected: {uploadFile.name} ({(uploadFile.size / 1024).toFixed(1)} KB)
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="form-group" style={{ marginBottom: '1.25rem' }}>
+                    <label className="form-label">
+                      Assign to Patient Reference (Optional)
+                    </label>
+                    <select
+                      className="form-input"
+                      value={uploadPatientId}
+                      onChange={(e) => setUploadPatientId(e.target.value)}
+                    >
+                      <option value="">Unassigned Hospital Document</option>
+                      {patients.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.opaque_patient_id}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => setShowUploadModal(false)}
+                      disabled={uploading}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="btn btn-primary btn-sm"
+                      disabled={uploading || !uploadFile}
+                    >
+                      {uploading ? 'Uploading & Processing...' : 'Upload & Process'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
           )}
 
           {/* Document Metadata Inspector Modal */}

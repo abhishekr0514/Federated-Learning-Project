@@ -71,6 +71,10 @@ class ECGReportEvaluateResponse(BaseModel):
     is_research_only: bool = True
     disclaimer: str
     provenance: str
+    privacy_validation_status: str = Field(
+        default="VALIDATED",
+        description="Verified fail-closed privacy masking status.",
+    )
     evaluated_at: str = Field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )

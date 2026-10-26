@@ -80,6 +80,7 @@ export function Sidebar({ isOpen, activeTab, onSelectTab, role }) {
       {
         group: 'Models & Engine',
         items: [
+          { id: 'inference', label: 'Diagnostic Studio', icon: Activity, badge: 'Live ML' },
           { id: 'models', label: 'Model Artifacts', icon: Cpu },
           { id: 'metrics', label: 'Local Metrics', icon: BarChart3 },
           { id: 'federated', label: 'Federated Node', icon: Radio, badge: 'Disabled' },
@@ -101,6 +102,7 @@ export function Sidebar({ isOpen, activeTab, onSelectTab, role }) {
         group: 'Clinical Workspace',
         items: [
           { id: 'dashboard', label: 'Clinician Workspace', icon: LayoutDashboard },
+          { id: 'inference', label: 'Diagnostic Studio', icon: Activity, badge: 'Live ML' },
           { id: 'patients', label: 'Assigned Patients', icon: Stethoscope },
           { id: 'documents', label: 'Clinical Reports', icon: FileText },
         ],
@@ -108,6 +110,7 @@ export function Sidebar({ isOpen, activeTab, onSelectTab, role }) {
       {
         group: 'Diagnostic Intelligence',
         items: [
+          { id: 'federated', label: 'Federated Node', icon: Radio, badge: 'Flower' },
           { id: 'diagnosis', label: 'GAT Diagnosis', icon: Activity, badge: '501' },
           { id: 'explanations', label: 'DiCE Explanations', icon: Cpu, badge: '501' },
           { id: 'causal', label: 'DoWhy Causal AI', icon: BarChart3, badge: '501' },

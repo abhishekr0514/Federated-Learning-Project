@@ -2,6 +2,9 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { HospitalAdminLayout } from '../../layouts/HospitalAdminLayout';
 import { apiRequest, ApiError } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
+import { DiagnosticWorkspace } from '../../components/DiagnosticWorkspace';
+import { ModelStatusPanel } from '../../components/ModelStatusPanel';
+import { FederatedLearningPanel } from '../../components/FederatedLearningPanel';
 import {
   Building2,
   Users,
@@ -329,6 +332,9 @@ export function HospitalAdminDashboard() {
       ========================================================================= */}
       {activeTab === 'overview' && (
         <div>
+          {/* Live Model Architecture Readiness Diagnostics */}
+          <ModelStatusPanel />
+
           <NotEnabledBanner
             title="Training Subsystems Notice"
             description="Flower federated training and local model gradient updates are intentionally NOT enabled in this deployment. All metrics shown reflect historical offline baseline evaluations or zero-mock empty states."
@@ -433,6 +439,13 @@ export function HospitalAdminDashboard() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* =========================================================================
+          TAB: DIAGNOSTIC STUDIO (INFERENCE)
+      ========================================================================= */}
+      {activeTab === 'inference' && (
+        <DiagnosticWorkspace />
       )}
 
       {/* =========================================================================
@@ -794,6 +807,9 @@ export function HospitalAdminDashboard() {
       ========================================================================= */}
       {activeTab === 'federated' && (
         <div>
+          {/* Live Federated Learning Telemetry & Orchestration */}
+          <FederatedLearningPanel />
+
           <NotEnabledBanner
             title="Flower Federated Aggregation Disabled"
             description="Federated learning Flower aggregation engine is not active. Central server does not broadcast training rounds to clients."
