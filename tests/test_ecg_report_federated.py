@@ -145,6 +145,15 @@ def test_build_partitions_smoke():
 
 
 @pytest.mark.skipif(not PTBXL.is_dir(), reason="PTB-XL not installed")
+def test_encoder_ft_config_loads():
+    cfg = load_federation_config(
+        REPO_ROOT / "configs" / "federations" / "ecg_report_v1_encoder_ft_full.json"
+    )
+    assert cfg.federated_trainable_scope == "fusion_head_and_ecg_encoder"
+    assert cfg.eval_max_test_records is None
+
+
+@pytest.mark.skipif(not PTBXL.is_dir(), reason="PTB-XL not installed")
 @pytest.mark.slow
 def test_ecg_report_fl_smoke_run(tmp_path):
     manifest = REPO_ROOT / "models" / "ecg_report_fusion" / "manifest.json"

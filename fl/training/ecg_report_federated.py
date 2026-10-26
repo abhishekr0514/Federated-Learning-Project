@@ -238,10 +238,10 @@ def run_ecg_report_federated_experiment(
 
     run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     if output_root is not None:
-        run_dir = Path(output_root)
+        run_dir = Path(output_root).resolve()
     else:
         sub = experiment_label or run_id
-        run_dir = REPO_ROOT / cfg.output_dir / cfg.ecg_report_experiment_subdir / sub
+        run_dir = (REPO_ROOT / cfg.output_dir / cfg.ecg_report_experiment_subdir / sub).resolve()
     run_dir.mkdir(parents=True, exist_ok=True)
     save_ecg_report_partition_plan(run_dir / "partition_plan.json", plan)
 
@@ -419,17 +419,50 @@ def run_ecg_report_federated_experiment(
     save_federated_checkpoint(ckpt_path, metadata=meta, global_arrays=global_arrays, parameter_names=names)
 
     elapsed = time.time() - t0
+    if scope == "fusion_head":
+        experiment_kind = "experiment_a_fusion_head_only"
+        mode_description = (
+            "Experiment A: federated fusion-head training; ECG and text encoders frozen."
+        )
+    elif scope == "fusion_head_and_ecg_encoder":
+        experiment_kind = "experiment_b_fusion_head_and_ecg_encoder"
+        mode_description = (
+            "Experiment B: federated fusion-head + ECG encoder fine-tuning; text/BERT frozen."
+        )
+    else:
+        experiment_kind = f"ecg_report_fl_{scope}"
+        mode_description = scope
+
+    exp_a_report = REPO_ROOT / "data/processed/federated/ecg_report_experiments/full_frozen_head_s42/report.json"
+    experiment_a_reference = None
+    if exp_a_report.is_file():
+        try:
+            exp_a = json.loads(exp_a_report.read_text(encoding="utf-8"))
+            u = exp_a.get("unified_comparison_same_records", {})
+            experiment_a_reference = {
+                "run_dir": str(exp_a_report.parent),
+                "federated_test": u.get("federated_global_model", {}).get("test"),
+                "centralized_test": u.get("centralized_trainable_scope", {}).get("test"),
+                "pretrained_test": u.get("pretrained_checkpoint_unchanged", {}).get("test"),
+            }
+        except (json.JSONDecodeError, OSError):
+            experiment_a_reference = None
+
     manifest = {
-        "experiment": "federated_ecg_report_frozen_encoders_fusion_head",
+        "experiment": experiment_kind,
         "experiment_label": experiment_label,
         "run_id": run_id,
         "training_mode": {
-            "description": "Federated fusion-head training only; ECG and text encoders frozen.",
+            "description": mode_description,
             "federated_trainable_scope": scope,
             "trainable_parameter_names": trainable_names,
+            "trainable_parameter_count": len(trainable_names),
+            "frozen_parameter_names_sample": frozen_names[:5],
             "frozen_parameter_count": len(frozen_names),
-            "aggregated_parameters": "sample_weighted_fedavg on trainable head only",
+            "aggregated_parameters": "sample_weighted_fedavg on listed trainable parameters only",
+            "not_end_to_end_federated": True,
         },
+        "experiment_a_baseline_reference": experiment_a_reference,
         "config": cfg.to_dict(),
         "partition_plan_summary": {
             "train_row_count_total": plan.train_row_count_total,
