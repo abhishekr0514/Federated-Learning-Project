@@ -81,6 +81,9 @@ class FlowerSupervisor:
         env["MEDSHIELD_FL_STATE_PATH"] = str(
             _REPO_ROOT / "data" / "processed" / "federated" / "live_supervisor_state.json"
         )
+        from ml.federated.gat_ecg_report_fl import default_bundle_path
+
+        env["MEDSHIELD_GAT_FL_BUNDLE"] = str(default_bundle_path())
         return utf8_subprocess_env(env)
 
     @staticmethod
@@ -397,13 +400,14 @@ insecure = false
         return _REPO_ROOT / "data" / "processed" / "federated" / "live_supervisor_state.json"
 
     @classmethod
-    def _run_flwr_app(cls, *, num_rounds: int) -> subprocess.CompletedProcess:
+    def _run_flwr_app(cls, *, num_rounds: int, run_id: str) -> subprocess.CompletedProcess:
         env = utf8_subprocess_env(os.environ.copy())
         env["PYTHONPATH"] = (
             str(_APP_DIR) + os.pathsep + str(_REPO_ROOT) + os.pathsep + env.get("PYTHONPATH", "")
         )
         env["FLOWER_NUM_ROUNDS"] = str(num_rounds)
         env["MEDSHIELD_FL_STATE_PATH"] = str(cls._state_file_path())
+        env["MEDSHIELD_FL_RUN_ID"] = run_id
         cmd = [
             flwr_executable(),
             "run",
@@ -476,7 +480,7 @@ insecure = false
             cls._lifecycle = "WAITING_FOR_CLIENTS"
 
             cls._lifecycle = "RUNNING"
-            proc = cls._run_flwr_app(num_rounds=num_rounds)
+            proc = cls._run_flwr_app(num_rounds=num_rounds, run_id=run_id)
             code = proc.returncode
             if code != 0:
                 raise RuntimeError(
@@ -496,6 +500,21 @@ insecure = false
             elif cls._aggregation_evidence(state, num_rounds=num_rounds):
                 cls._lifecycle = "COMPLETED"
                 write_state({"lifecycle": "COMPLETED", "run_id": run_id})
+                try:
+                    from ml.federated.gat_ecg_report_fl import finalize_federated_run
+
+                    finalize_federated_run(run_id, live_state=state)
+                except Exception as fin_exc:
+                    msg = cls._safe_exc_message(fin_exc)
+                    cls._last_error = f"Run aggregated but GAT evaluation failed: {msg}"
+                    write_state(
+                        {
+                            "lifecycle": "COMPLETED",
+                            "run_id": run_id,
+                            "last_error": cls._last_error,
+                            "gat_evaluation_failed": True,
+                        }
+                    )
             else:
                 cls._lifecycle = "FAILED"
                 cls._last_error = "Run finished without sufficient aggregation evidence"

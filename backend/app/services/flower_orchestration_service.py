@@ -193,8 +193,9 @@ class FlowerOrchestrationService:
             "secure_aggregation": False,
             "differential_privacy": False,
             "note": (
-                "Synthetic non-clinical FedAvg via Flower SuperLink + independent SuperNodes. "
-                "No secure aggregation or DP. Local multi-process dev ≠ multi-hospital production."
+                "Research FedAvg on MedShieldGATECGReportNet (fusion head over frozen PTB-XL embeddings) "
+                "via Flower SuperLink + two local SuperNodes. No secure aggregation or DP. "
+                "Simulated hospitals ≠ production multi-site deployment."
             ),
         }
 
@@ -204,6 +205,12 @@ class FlowerOrchestrationService:
             raise RuntimeError("Flower orchestration is disabled (FLOWER_ORCHESTRATION_ENABLED=false).")
         if not settings.FLOWER_TRAINING_ENABLED:
             raise RuntimeError("Flower training is disabled (FLOWER_TRAINING_ENABLED=false).")
+        if settings.FLOWER_DEPLOYMENT_MODE == "superlink":
+            from ml.federated.gat_ecg_report_fl import bundle_readiness
+
+            ok, blockers = bundle_readiness()
+            if not ok:
+                raise RuntimeError("GAT_FL_NOT_READY: " + "; ".join(blockers))
         if not _flwr_available():
             raise RuntimeError("Flower (flwr) is not installed.")
         rounds = num_rounds or settings.FLOWER_NUM_ROUNDS

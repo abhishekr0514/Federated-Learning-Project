@@ -1,16 +1,14 @@
 """
-MedShield synthetic infrastructure Flower App (Flower 1.30 ServerApp / ClientApp).
+MedShield Flower App (Flower 1.30 ServerApp / ClientApp).
 
-Self-contained for FAB deployment: no imports from repo-root ``fl`` package.
-Non-clinical: tiny linear model only. No patient data leaves client processes.
+Two simulated hospitals train MedShieldGATECGReportNet (fusion head over frozen PTB-XL embeddings).
+Non-clinical research demo — parameters and allowlisted scalars only over the wire.
 """
 
 from __future__ import annotations
 
 import os
 from typing import Any
-
-import numpy as np
 
 from run_state import parameter_vector_hash, read_state, upsert_round_history, write_state
 
@@ -20,6 +18,7 @@ _STATE_PATH: list[str | None] = [None]
 def _state_file() -> str | None:
     return _STATE_PATH[0]
 
+
 from flwr.clientapp import ClientApp
 from flwr.common import Context, ndarrays_to_parameters, parameters_to_ndarrays
 from flwr.server import ServerApp, ServerAppComponents, ServerConfig
@@ -27,48 +26,53 @@ from flwr.server.strategy import FedAvg
 
 _RUN_CFG_ROUNDS: list[int] = [2]
 
-FEDERATION_ID = "medshield-synthetic"
-TASK_ID = "infrastructure-smoke"
-ARCHITECTURE_ID = "linear-4"
-ARCHITECTURE_VERSION = "1"
+FEDERATION_ID = "medshield-gat-ecg-report"
+TASK_ID = "gat-ecg-report-federated"
+ARCHITECTURE_ID = "medshield.diagnostic_net.gat_ecg_report"
+ARCHITECTURE_VERSION = "1.0.0"
+FEDERATED_SCOPE = "gat_fusion_head_over_frozen_embeddings"
 
 
 def context_run_config_rounds() -> int:
     return _RUN_CFG_ROUNDS[0]
 
 
-class _SyntheticAdapter:
-    """Tiny linear model for FL infrastructure tests only (not clinical)."""
+def _import_gat_fl():
+    from ml.federated.gat_ecg_report_fl import (
+        GATFederatedClientAdapter,
+        GATFLBundleError,
+        create_model,
+        default_bundle_path,
+        load_bundle,
+        save_global_checkpoint,
+        state_dict_to_numpy_list,
+    )
 
-    def __init__(self, *, seed: int, num_examples: int) -> None:
-        self._num_examples = num_examples
-        rng = np.random.default_rng(seed)
-        self._w = rng.normal(size=(4, 1)).astype(np.float32)
-        self._b = rng.normal(size=(1,)).astype(np.float32)
-
-    def parameter_arrays(self) -> list[np.ndarray]:
-        return [self._w.copy(), self._b.copy()]
-
-    def set_parameters(self, arrays: list[np.ndarray]) -> None:
-        self._w = np.asarray(arrays[0], dtype=np.float32).reshape(4, 1)
-        self._b = np.asarray(arrays[1], dtype=np.float32).reshape(1)
-
-    def num_local_examples(self) -> int:
-        return self._num_examples
-
-    def fit(self, config: dict[str, Any]) -> tuple[list[np.ndarray], int, dict[str, float]]:
-        epochs = int(config.get("local_epochs", 1))
-        lr = 0.05
-        for _ in range(epochs):
-            self._w += lr * np.sign(self._w) * 0.01
-            self._b += lr * np.sign(self._b) * 0.01
-        return self.parameter_arrays(), self._num_examples, {"loss": 0.1}
+    return (
+        GATFederatedClientAdapter,
+        GATFLBundleError,
+        create_model,
+        default_bundle_path,
+        load_bundle,
+        save_global_checkpoint,
+        state_dict_to_numpy_list,
+    )
 
 
-def _adapter_for_partition(partition_id: int) -> _SyntheticAdapter:
-    seed = 42 + int(partition_id)
-    num_examples = 120 if partition_id == 0 else 60
-    return _SyntheticAdapter(seed=seed, num_examples=num_examples)
+def _adapter_for_partition(partition_id: int):
+    (
+        GATFederatedClientAdapter,
+        GATFLBundleError,
+        _create_model,
+        default_bundle_path,
+        load_bundle,
+        *_rest,
+    ) = _import_gat_fl()
+    try:
+        bundle = load_bundle(default_bundle_path())
+    except GATFLBundleError as exc:
+        raise RuntimeError(str(exc)) from exc
+    return GATFederatedClientAdapter(partition_id, bundle)
 
 
 def client_fn(context: Context):
@@ -76,20 +80,23 @@ def client_fn(context: Context):
 
     node = context.node_config
     partition_id = int(node.get("partition-id", node.get("partition_id", 0)))
-    adapter = _adapter_for_partition(partition_id)
 
     class _Client(NumPyClient):
+        def __init__(self) -> None:
+            self._adapter = _adapter_for_partition(partition_id)
+
         def get_parameters(self, config: dict[str, Any]):
-            return adapter.parameter_arrays()
+            return self._adapter.parameter_arrays()
 
         def fit(self, parameters, config: dict[str, Any]):
-            adapter.set_parameters(list(parameters))
-            out, n, metrics = adapter.fit(config)
+            self._adapter.set_parameters(list(parameters))
+            out, n, metrics = self._adapter.fit(config)
             return out, n, metrics
 
         def evaluate(self, parameters, config: dict[str, Any]):
-            adapter.set_parameters(list(parameters))
-            return 0.0, adapter.num_local_examples(), {}
+            self._adapter.set_parameters(list(parameters))
+            loss, n, metrics = self._adapter.evaluate(config)
+            return float(loss), int(n), metrics
 
     return _Client().to_client()
 
@@ -98,7 +105,7 @@ client_app = ClientApp(client_fn=client_fn)
 
 
 class _AuditingFedAvg(FedAvg):
-    """FedAvg that persists aggregation evidence for the control plane."""
+    """FedAvg that persists aggregation evidence and federated GAT checkpoints."""
 
     def aggregate_fit(self, server_round, results, failures):
         aggregated, aggregated_metrics = super().aggregate_fit(server_round, results, failures)
@@ -106,14 +113,17 @@ class _AuditingFedAvg(FedAvg):
             arrays = parameters_to_ndarrays(aggregated)
             total = int(context_run_config_rounds())
             prior = read_state(path=_state_file())
-            run_id = str(prior.get("run_id") or os.environ.get("MEDSHIELD_FL_RUN_ID") or "unknown")
+            run_id = str(
+                os.environ.get("MEDSHIELD_FL_RUN_ID") or prior.get("run_id") or "unknown"
+            )
+            g_hash = parameter_vector_hash(arrays)
             history = upsert_round_history(
                 prior.get("round_history"),
                 {
                     "round": server_round,
                     "successful_clients": len(results),
                     "failed_clients": len(failures),
-                    "global_parameter_hash": parameter_vector_hash(arrays),
+                    "global_parameter_hash": g_hash,
                 },
                 run_id=run_id,
             )
@@ -125,12 +135,24 @@ class _AuditingFedAvg(FedAvg):
                     "successful_clients_last_round": len(results),
                     "failed_clients_last_round": len(failures),
                     "last_aggregation_at": aggregated_metrics,
-                    "global_parameter_hash": parameter_vector_hash(arrays),
+                    "global_parameter_hash": g_hash,
                     "aggregation_status": "OK",
                     "round_history": history,
+                    "task": TASK_ID,
+                    "architecture_id": ARCHITECTURE_ID,
+                    "federated_training_scope": FEDERATED_SCOPE,
                 },
                 path=_state_file(),
             )
+            if server_round >= total and run_id != "unknown":
+                try:
+                    _, _, _, _, _, save_global_checkpoint, _ = _import_gat_fl()
+                    save_global_checkpoint(run_id, arrays, round_number=server_round, parameter_hash=g_hash)
+                except Exception as exc:
+                    write_state(
+                        {"last_error": f"checkpoint_save_failed: {exc}", "run_id": run_id},
+                        path=_state_file(),
+                    )
         return aggregated, aggregated_metrics
 
 
@@ -141,22 +163,42 @@ def server_fn(context: Context) -> ServerAppComponents:
     if os.environ.get("MEDSHIELD_FL_STATE_PATH"):
         _STATE_PATH[0] = os.environ["MEDSHIELD_FL_STATE_PATH"]
 
-    adapter0 = _adapter_for_partition(0)
-    init_arrays = adapter0.parameter_arrays()
+    (
+        _ClientAdapter,
+        GATFLBundleError,
+        create_model,
+        default_bundle_path,
+        load_bundle,
+        _save,
+        state_dict_to_numpy_list,
+    ) = _import_gat_fl()
+    try:
+        load_bundle(default_bundle_path())
+    except GATFLBundleError as exc:
+        write_state({"lifecycle": "FAILED", "last_error": str(exc), "task": TASK_ID}, path=_state_file())
+        raise RuntimeError(str(exc)) from exc
+
+    init_model = create_model()
+    init_arrays = state_dict_to_numpy_list(init_model)
     initial = ndarrays_to_parameters(init_arrays)
     init_hash = parameter_vector_hash(init_arrays)
 
+    run_id = os.environ.get("MEDSHIELD_FL_RUN_ID") or (
+        str(context.run_id) if hasattr(context, "run_id") else None
+    )
     write_state(
         {
             "lifecycle": "RUNNING",
-            "run_id": str(context.run_id) if hasattr(context, "run_id") else None,
+            "run_id": run_id,
             "total_rounds": num_rounds,
             "current_round": 0,
             "initial_parameter_hash": init_hash,
             "global_parameter_hash": init_hash,
             "local_epochs": local_epochs,
-            "task": "synthetic_infrastructure",
+            "task": TASK_ID,
             "architecture_id": ARCHITECTURE_ID,
+            "architecture_version": ARCHITECTURE_VERSION,
+            "federated_training_scope": FEDERATED_SCOPE,
         },
         path=_state_file(),
     )
@@ -165,7 +207,7 @@ def server_fn(context: Context) -> ServerAppComponents:
         fraction_fit=1.0,
         min_fit_clients=2,
         min_available_clients=2,
-        on_fit_config_fn=lambda _rnd: {"local_epochs": local_epochs},
+        on_fit_config_fn=lambda _rnd: {"local_epochs": local_epochs, "batch_size": 64, "learning_rate": 1e-3},
         initial_parameters=initial,
     )
 

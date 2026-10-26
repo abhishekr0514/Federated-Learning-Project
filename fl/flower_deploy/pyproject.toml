@@ -1,12 +1,14 @@
 [project]
 name = "medshield-flower-synthetic"
 version = "0.1.0"
-description = "MedShield synthetic infrastructure Flower app (non-clinical FedAvg smoke)"
+description = "MedShield GAT federated research Flower app (frozen embedding partitions)"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
 dependencies = [
   "flwr>=1.30.0",
   "numpy>=1.26.0",
+  "torch>=2.0.0",
+  "torch-geometric>=2.5.0",
 ]
 
 [tool.flwr.app]

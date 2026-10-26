@@ -163,7 +163,7 @@ export function FederatedLearningPanel() {
             </div>
             <div>
               <h3 style={{ fontSize: '1rem', fontWeight: 600, color: '#f8fafc', margin: 0 }}>
-                Flower SuperLink Demo (synthetic / non-clinical)
+                Flower SuperLink Demo (GAT research / non-clinical)
               </h3>
               <p style={{ fontSize: '0.75rem', color: '#94a3b8', margin: 0 }}>
                 Real SuperLink + two local SuperNodes; not production multi-hospital FL.
@@ -336,7 +336,7 @@ export function FederatedLearningPanel() {
             <div style={{ padding: '1rem', fontSize: '0.875rem', color: '#cbd5e1' }}>
               {actionType === 'start' && (
                 <p style={{ margin: 0 }}>
-                  Start a synthetic {DEMO_ROUNDS}-round FedAvg run on two local SuperNodes (non-clinical data only).
+                  Start a {DEMO_ROUNDS}-round FedAvg run on the fused ECG+report GAT head (frozen PTB-XL embeddings, simulated hospitals).
                 </p>
               )}
               {actionType === 'stop' && <p style={{ margin: 0 }}>Terminate SuperLink and SuperNode processes started by the supervisor.</p>}

@@ -22,6 +22,22 @@ def reset_flower_state():
         mod._reset_run_state()
 
 
+def test_start_blocked_without_gat_bundle(monkeypatch, tmp_path):
+    from backend.app.core.config import settings
+
+    monkeypatch.setattr(settings, "FLOWER_DEPLOYMENT_MODE", "superlink")
+    monkeypatch.setattr(settings, "FLOWER_ORCHESTRATION_ENABLED", True)
+    monkeypatch.setattr(settings, "FLOWER_TRAINING_ENABLED", True)
+    monkeypatch.setattr(
+        "backend.app.services.flower_orchestration_service._flwr_available",
+        lambda: True,
+    )
+    missing = tmp_path / "missing_bundle.pt"
+    monkeypatch.setenv("MEDSHIELD_GAT_FL_BUNDLE", str(missing))
+    with pytest.raises(RuntimeError, match="GAT_FL_NOT_READY"):
+        FlowerOrchestrationService.start_run()
+
+
 def test_start_rejected_when_disabled(monkeypatch):
     from backend.app.core.config import settings
 

@@ -21,7 +21,7 @@ REPO = Path(__file__).resolve().parents[1]
 
 
 @pytest.mark.skipif(os.environ.get("FLOWER_E2E") != "1", reason="Set FLOWER_E2E=1 to run real SuperLink E2E")
-def test_superlink_synthetic_federation_aggregates():
+def test_superlink_gat_federation_aggregates():
     cert_dir = REPO / "deployment" / "flower" / "dev"
     if not (cert_dir / "ca.pem").is_file():
         ps1 = REPO / "scripts" / "flower" / "generate_dev_materials.ps1"
@@ -40,8 +40,12 @@ def test_superlink_synthetic_federation_aggregates():
     settings.FLOWER_REQUIRE_TLS = True
     settings.FLOWER_DEPLOYMENT_MODE = "superlink"
 
+    from ml.federated.gat_ecg_report_fl import bundle_readiness
+
     ok, blockers = FlowerSupervisor.security_readiness()
     assert ok, blockers
+    b_ok, b_block = bundle_readiness()
+    assert b_ok, b_block
 
     start = FlowerSupervisor.start(num_rounds=2)
     assert "run_id" in start

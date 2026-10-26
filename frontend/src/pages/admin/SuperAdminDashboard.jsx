@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { AdminLayout } from '../../layouts/AdminLayout';
 import { FeatureNotImplemented } from '../../components/ErrorStates';
+import { GatFederatedResearchPanel } from '../../components/admin/GatFederatedResearchPanel';
 import { TabularFederatedResearchPanel } from '../../components/admin/TabularFederatedResearchPanel';
 import { ModelStatusPanel } from '../../components/ModelStatusPanel';
 import { DiagnosticWorkspace } from '../../components/DiagnosticWorkspace';
@@ -150,12 +151,21 @@ export function SuperAdminDashboard() {
 
           <div style={{ marginTop: '1.5rem' }}>
             <header style={{ marginBottom: '1rem' }}>
-              <h3 style={{ fontSize: '1.15rem', fontWeight: 600 }}>Tabular Federated Research (Read-Only)</h3>
+              <h3 style={{ fontSize: '1.15rem', fontWeight: 600 }}>Federated GAT Research Demo (Read-Only)</h3>
               <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
-                Saved cardio_train.csv simulation results — not live multi-hospital training.
+                Persisted results from Flower SuperLink runs training the fused ECG + clinical-report GAT head on
+                frozen PTB-XL embeddings — not live multi-hospital deployment.
               </p>
             </header>
-            <TabularFederatedResearchPanel />
+            <GatFederatedResearchPanel />
+            <details style={{ marginTop: '1.5rem' }}>
+              <summary style={{ cursor: 'pointer', color: 'var(--text-muted)', fontSize: '0.875rem' }}>
+                Legacy tabular cardio_train.csv experiment (archived)
+              </summary>
+              <div style={{ marginTop: '0.75rem' }}>
+                <TabularFederatedResearchPanel />
+              </div>
+            </details>
           </div>
         </div>
       )}

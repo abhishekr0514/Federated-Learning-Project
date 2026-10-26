@@ -13,6 +13,7 @@ from backend.app.core.security import SystemPermission
 from backend.app.models.identity import User
 from backend.app.schemas.common import GenericSuccessEnvelope, RequestMetadata
 from backend.app.services.federated_experiment_service import get_tabular_experiment_status
+from backend.app.services.gat_federated_experiment_service import get_gat_federated_experiment_status
 from backend.app.services.flower_orchestration_service import FlowerOrchestrationService
 
 router = APIRouter(prefix="/federated", tags=["Federated"])
@@ -61,7 +62,7 @@ async def start_fl_campaign(
         raise ValidationAppError(str(exc)) from exc
     return GenericSuccessEnvelope(
         data=data,
-        metadata=RequestMetadata(message="Federated synthetic run started."),
+        metadata=RequestMetadata(message="Federated GAT research run started."),
     )
 
 
@@ -74,6 +75,20 @@ async def stop_fl_campaign(
     return GenericSuccessEnvelope(
         data=data,
         metadata=RequestMetadata(message="Federated run stop requested."),
+    )
+
+
+@router.get("/experiments/gat/latest", response_model=GenericSuccessEnvelope)
+async def get_latest_gat_federated_experiment(
+    run_id: str | None = Query(None, description="Optional Flower run id under gat_ecg_report_runs/"),
+    _user: User = Depends(get_current_user),
+    __perm: User = Depends(require_permission(SystemPermission.FEDERATED_MONITOR)),
+):
+    """Sanitized summary of a completed GAT federated Flower run (held-out test AUROC when available)."""
+    data = get_gat_federated_experiment_status(run_id=run_id)
+    return GenericSuccessEnvelope(
+        data=data,
+        metadata=RequestMetadata(message="GAT federated experiment summary retrieved."),
     )
 
 
