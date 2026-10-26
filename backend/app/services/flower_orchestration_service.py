@@ -8,6 +8,7 @@ from typing import Any, Dict, Optional
 
 from backend.app.core.config import settings
 from backend.app.services.flower_supervisor import FlowerSupervisor
+from fl.flower_deploy.run_state import normalize_round_history
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +27,13 @@ def _flwr_version() -> Optional[str]:
 
 class FlowerOrchestrationService:
     @staticmethod
+    def _completed_run_with_aggregation(file_state: Dict[str, Any]) -> bool:
+        total = int(file_state.get("total_rounds") or 2)
+        return str(file_state.get("lifecycle") or "").upper() == "COMPLETED" and FlowerSupervisor._aggregation_evidence(
+            file_state, num_rounds=total
+        )
+
+    @staticmethod
     def _demo_supernodes(
         *,
         snap: Dict[str, Any],
@@ -35,13 +43,8 @@ class FlowerOrchestrationService:
         """Two synthetic demo partitions (non-clinical); maps to SuperNode processes + Control API node info."""
         reg_list = list(file_state.get("registered_nodes") or [])
         procs = {p.get("name"): p for p in snap.get("processes", [])}
-        active_lifecycle = lifecycle in (
-            "STARTING",
-            "WAITING_FOR_CLIENTS",
-            "RUNNING",
-            "STOPPING",
-            "COMPLETED",
-            "FAILED",
+        run_completed = lifecycle == "COMPLETED" and FlowerOrchestrationService._completed_run_with_aggregation(
+            file_state
         )
         nodes: list[Dict[str, Any]] = []
         for i in range(2):
@@ -49,12 +52,17 @@ class FlowerOrchestrationService:
             code = f"partition-{i}"
             proc = procs.get(f"supernode-{i}")
             reg = reg_list[i] if i < len(reg_list) else {}
-            if proc and proc.get("alive"):
-                raw = str(reg.get("status") or "connecting").lower()
+            process_alive = bool(proc and proc.get("alive"))
+            fleet_status = str(reg.get("status") or "unknown").lower() if reg else "unknown"
+            if process_alive:
+                raw = fleet_status if fleet_status != "unknown" else "connecting"
                 connection = raw if raw in ("online", "registered", "offline") else "connecting"
-            elif active_lifecycle and reg:
-                connection = str(reg.get("status") or "unknown").lower()
+                participation_status = "live"
+            elif run_completed and reg.get("node_id") is not None:
+                participation_status = "completed_run"
+                connection = "offline"
             else:
+                participation_status = "idle"
                 connection = "offline"
             nodes.append(
                 {
@@ -64,8 +72,10 @@ class FlowerOrchestrationService:
                     "partition_id": i,
                     "node_id": reg.get("node_id"),
                     "connection_status": connection,
+                    "participation_status": participation_status,
+                    "fleet_status": fleet_status if reg else None,
                     "process_pid": proc.get("pid") if proc else None,
-                    "process_alive": bool(proc and proc.get("alive")),
+                    "process_alive": process_alive,
                 }
             )
         return nodes
@@ -112,6 +122,25 @@ class FlowerOrchestrationService:
             reason = "No active SuperLink run."
 
         alive = [p for p in snap.get("processes", []) if p.get("alive")]
+        demo_supernodes = FlowerOrchestrationService._demo_supernodes(
+            snap=snap,
+            file_state=file_state,
+            lifecycle=lifecycle,
+        )
+        demo_nodes_live_count = sum(1 for n in demo_supernodes if n.get("process_alive"))
+        demo_nodes_participated_count = sum(
+            1 for n in demo_supernodes if n.get("participation_status") == "completed_run"
+        )
+        post_run_processes_stopped = (
+            lifecycle == "COMPLETED"
+            and demo_nodes_live_count == 0
+            and demo_nodes_participated_count >= 2
+        )
+        if post_run_processes_stopped:
+            reason = (
+                "Federated run completed successfully. Local SuperLink and SuperNode processes were "
+                "stopped by the supervisor after the run (expected demo teardown)."
+            )
         return {
             "summary": summary,
             "reason": reason,
@@ -146,12 +175,16 @@ class FlowerOrchestrationService:
             "global_parameter_hash": file_state.get("global_parameter_hash"),
             "global_model_version": file_state.get("architecture_id"),
             "last_error": snap.get("last_error"),
-            "history": list(file_state.get("round_history") or []),
-            "demo_supernodes": FlowerOrchestrationService._demo_supernodes(
-                snap=snap,
-                file_state=file_state,
-                lifecycle=lifecycle,
+            "supervisor_phase_failed": bool(file_state.get("supervisor_phase_failed")),
+            "aggregation_succeeded": FlowerSupervisor._aggregation_evidence(
+                file_state,
+                num_rounds=int(file_state.get("total_rounds") or 2),
             ),
+            "history": normalize_round_history(file_state.get("round_history")),
+            "demo_supernodes": demo_supernodes,
+            "demo_nodes_live_count": demo_nodes_live_count,
+            "demo_nodes_participated_count": demo_nodes_participated_count,
+            "post_run_processes_stopped": post_run_processes_stopped,
             "demo_local_setup_hint": (
                 "Local SuperLink demo: set FLOWER_ORCHESTRATION_ENABLED=true, "
                 "FLOWER_TRAINING_ENABLED=true, FLOWER_DEPLOYMENT_MODE=superlink, "

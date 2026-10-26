@@ -21,6 +21,8 @@ from backend.app.services.flower_process_utils import (
     flower_superlink_executable,
     flower_supernode_executable,
     pids_listening_on_ports,
+    safe_diagnostic_text,
+    utf8_subprocess_env,
 )
 
 logger = logging.getLogger(__name__)
@@ -79,7 +81,73 @@ class FlowerSupervisor:
         env["MEDSHIELD_FL_STATE_PATH"] = str(
             _REPO_ROOT / "data" / "processed" / "federated" / "live_supervisor_state.json"
         )
-        return env
+        return utf8_subprocess_env(env)
+
+    @staticmethod
+    def _safe_exc_message(exc: BaseException) -> str:
+        return safe_diagnostic_text(f"{type(exc).__name__}: {exc}")
+
+    @classmethod
+    def _register_output_acceptable(cls, *, returncode: int, combined: str) -> bool:
+        if returncode == 0:
+            return True
+        lower = combined.lower()
+        if "already in use" in lower:
+            return True
+        if "created node_id" in lower or "registernode" in lower:
+            return True
+        if "charmap" in lower and "encode" in lower:
+            # Rich/typer console rendering failed on Windows pipes; verify via Control API instead.
+            return False
+        return False
+
+    @classmethod
+    def _exec_flwr_register(cls, pub: Path) -> tuple[int, str]:
+        """Run `flwr supernode register` with UTF-8 log file (avoid Windows pipe charmap crashes)."""
+        cls._log_dir.mkdir(parents=True, exist_ok=True)
+        log_path = cls._log_dir / f"register-{pub.stem}.log"
+        cmd = [
+            flwr_executable(),
+            "supernode",
+            "register",
+            str(pub),
+            "medshield-dev-tls",
+        ]
+        with log_path.open("wb") as log_handle:
+            proc = subprocess.run(
+                cmd,
+                cwd=str(_APP_DIR),
+                check=False,
+                stdout=log_handle,
+                stderr=subprocess.STDOUT,
+                env=cls._base_env(),
+            )
+        combined = safe_diagnostic_text(log_path.read_text(encoding="utf-8", errors="replace"))
+        return proc.returncode, combined
+
+    @classmethod
+    def _registered_node_count(cls) -> int:
+        try:
+            nodes = cls._list_nodes_via_control()
+        except Exception:
+            return 0
+        ok = {"registered", "online"}
+        return sum(1 for n in nodes if str(n.get("status", "")).lower() in ok)
+
+    @classmethod
+    def _aggregation_evidence(cls, state: dict[str, Any], *, num_rounds: int) -> bool:
+        init_h = state.get("initial_parameter_hash")
+        final_h = state.get("global_parameter_hash")
+        if not init_h or not final_h or init_h == final_h:
+            return False
+        try:
+            completed_rounds = int(state.get("current_round") or 0)
+        except (TypeError, ValueError):
+            completed_rounds = 0
+        if completed_rounds >= num_rounds:
+            return True
+        history = state.get("round_history") or []
+        return len(history) >= num_rounds
 
     @classmethod
     def _popen(
@@ -243,26 +311,34 @@ insecure = false
     def _register_supernodes(cls) -> None:
         cls._ensure_flwr_connection_config()
         paths = cls._cert_paths()
+        logs: list[str] = []
         for pub in (paths["client0_pub"], paths["client1_pub"]):
-            proc = subprocess.run(
-                [
-                    flwr_executable(),
-                    "supernode",
-                    "register",
-                    str(pub),
-                    "medshield-dev-tls",
-                ],
-                cwd=str(_APP_DIR),
-                check=False,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                env=cls._base_env(),
+            before = cls._registered_node_count()
+            returncode, combined = cls._exec_flwr_register(pub)
+            after = cls._registered_node_count()
+            logs.append(f"{pub.name} exit={returncode} nodes={before}->{after}\n{combined}")
+            if cls._register_output_acceptable(returncode=returncode, combined=combined):
+                logger.info("supernode register %s exit=%s (cli ok)", pub.name, returncode)
+                continue
+            if after > before:
+                logger.warning(
+                    "supernode register %s exit=%s but Control API node count increased",
+                    pub.name,
+                    returncode,
+                )
+                continue
+            raise RuntimeError(
+                safe_diagnostic_text(
+                    f"supernode register failed for {pub.name} (exit={returncode}): {combined}"
+                )
             )
-            combined = (proc.stderr or "") + (proc.stdout or "")
-            if proc.returncode != 0 and "already in use" not in combined:
-                raise RuntimeError(f"supernode register failed for {pub.name}: {combined}")
+        if cls._registered_node_count() < 2:
+            raise RuntimeError(
+                safe_diagnostic_text(
+                    "SuperLink Control API reports fewer than 2 registered SuperNodes after register. "
+                    + "\n---\n".join(logs)
+                )
+            )
 
     @classmethod
     def _start_superlink(cls, *, run_id: str) -> None:
@@ -322,11 +398,12 @@ insecure = false
 
     @classmethod
     def _run_flwr_app(cls, *, num_rounds: int) -> subprocess.CompletedProcess:
-        env = os.environ.copy()
+        env = utf8_subprocess_env(os.environ.copy())
         env["PYTHONPATH"] = (
             str(_APP_DIR) + os.pathsep + str(_REPO_ROOT) + os.pathsep + env.get("PYTHONPATH", "")
         )
         env["FLOWER_NUM_ROUNDS"] = str(num_rounds)
+        env["MEDSHIELD_FL_STATE_PATH"] = str(cls._state_file_path())
         cmd = [
             flwr_executable(),
             "run",
@@ -347,9 +424,6 @@ insecure = false
                 env=env,
                 stdout=log_file,
                 stderr=subprocess.STDOUT,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
                 timeout=3600,
             )
 
@@ -371,7 +445,18 @@ insecure = false
         from fl.flower_deploy.run_state import read_state, write_state
 
         try:
-            write_state({"lifecycle": "STARTING", "run_id": run_id, "total_rounds": num_rounds})
+            write_state(
+                {
+                    "lifecycle": "STARTING",
+                    "run_id": run_id,
+                    "total_rounds": num_rounds,
+                    "round_history": [],
+                    "last_error": None,
+                    "supervisor_phase_failed": False,
+                    "supervisor_error": None,
+                }
+            )
+            os.environ["MEDSHIELD_FL_RUN_ID"] = run_id
             cls._prepare_clean_slate()
             cls._start_superlink(run_id=run_id)
             if not cls._wait_control_api():
@@ -403,17 +488,53 @@ insecure = false
             if init_h and final_h and init_h == final_h:
                 cls._lifecycle = "FAILED"
                 cls._last_error = "Global parameters unchanged after run (no aggregation evidence)"
+                write_state({"lifecycle": "FAILED", "last_error": cls._last_error, "run_id": run_id})
             elif not init_h or not final_h:
                 cls._lifecycle = "FAILED"
                 cls._last_error = "Missing parameter hash evidence in run state file"
-            else:
+                write_state({"lifecycle": "FAILED", "last_error": cls._last_error, "run_id": run_id})
+            elif cls._aggregation_evidence(state, num_rounds=num_rounds):
                 cls._lifecycle = "COMPLETED"
                 write_state({"lifecycle": "COMPLETED", "run_id": run_id})
+            else:
+                cls._lifecycle = "FAILED"
+                cls._last_error = "Run finished without sufficient aggregation evidence"
+                write_state(
+                    {
+                        "lifecycle": "FAILED",
+                        "last_error": cls._last_error,
+                        "run_id": run_id,
+                    }
+                )
         except Exception as exc:
-            logger.exception("Flower supervisor run failed")
-            cls._lifecycle = "FAILED"
-            cls._last_error = f"{type(exc).__name__}: {exc}"
-            write_state({"lifecycle": "FAILED", "last_error": cls._last_error, "run_id": run_id})
+            msg = cls._safe_exc_message(exc)
+            logger.error("Flower supervisor run failed: %s", msg)
+            state = read_state(path=cls._state_file_path())
+            agg_ok = cls._aggregation_evidence(state, num_rounds=num_rounds)
+            cls._last_error = msg
+            if agg_ok:
+                cls._lifecycle = "FAILED"
+                cls._last_error = (
+                    f"Supervisor error after successful aggregation ({msg}). "
+                    "Round results preserved in run state."
+                )
+                write_state(
+                    {
+                        "last_error": cls._last_error,
+                        "supervisor_error": msg,
+                        "supervisor_phase_failed": True,
+                        "run_id": run_id,
+                    }
+                )
+            else:
+                cls._lifecycle = "FAILED"
+                write_state(
+                    {
+                        "lifecycle": "FAILED",
+                        "last_error": cls._last_error,
+                        "run_id": run_id,
+                    }
+                )
         finally:
             cls._cleanup_processes()
 

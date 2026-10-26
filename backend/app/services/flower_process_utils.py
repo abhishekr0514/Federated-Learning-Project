@@ -12,6 +12,35 @@ from typing import Iterable
 logger = logging.getLogger(__name__)
 
 
+def utf8_subprocess_env(base: dict[str, str] | None = None) -> dict[str, str]:
+    """Windows-safe UTF-8 for Flower CLI child processes (avoid active console code page)."""
+    env = dict(base or {})
+    env.setdefault("PYTHONUTF8", "1")
+    env.setdefault("PYTHONIOENCODING", "utf-8")
+    if sys.platform == "win32":
+        env.setdefault("NO_COLOR", "1")
+        env.setdefault("TERM", "dumb")
+        env.setdefault("RICH_NO_COLOR", "1")
+        env.setdefault("PYTHONLEGACYWINDOWSSTDIO", "utf-8")
+    return env
+
+
+def decode_subprocess_bytes(data: bytes | None) -> str:
+    if not data:
+        return ""
+    return data.decode("utf-8", errors="replace")
+
+
+def safe_diagnostic_text(text: str, *, max_len: int = 8000) -> str:
+    """Ensure exception/log text never triggers console charmap encode failures."""
+    if not text:
+        return ""
+    cleaned = text.encode("utf-8", errors="replace").decode("utf-8", errors="replace")
+    if len(cleaned) > max_len:
+        return cleaned[:max_len] + "...(truncated)"
+    return cleaned
+
+
 def flwr_executable() -> str:
     """Resolve the same `flwr` CLI the user installed with the active interpreter."""
     import shutil

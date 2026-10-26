@@ -53,6 +53,45 @@ def write_state(payload: dict[str, Any], *, path: Path | str | None = None) -> N
         target.write_text(json.dumps(body, indent=2), encoding="utf-8")
 
 
+def normalize_round_history(history: list[Any] | None) -> list[dict[str, Any]]:
+    """One record per (run_id, round); latest entry wins."""
+    if not history:
+        return []
+    merged: dict[tuple[str, int], dict[str, Any]] = {}
+    for item in history:
+        if not isinstance(item, dict):
+            continue
+        try:
+            rnd = int(item.get("round", 0))
+        except (TypeError, ValueError):
+            continue
+        run_id = str(item.get("run_id") or "")
+        merged[(run_id, rnd)] = dict(item)
+    return sorted(merged.values(), key=lambda h: (str(h.get("run_id", "")), int(h.get("round", 0))))
+
+
+def upsert_round_history(
+    history: list[Any] | None,
+    entry: dict[str, Any],
+    *,
+    run_id: str,
+) -> list[dict[str, Any]]:
+    body = {**entry, "run_id": str(run_id)}
+    try:
+        rnd = int(body["round"])
+    except (KeyError, TypeError, ValueError):
+        return normalize_round_history(list(history or []))
+    out: list[dict[str, Any]] = []
+    for item in history or []:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("run_id") or "") == str(run_id) and int(item.get("round", -1)) == rnd:
+            continue
+        out.append(dict(item))
+    out.append(body)
+    return normalize_round_history(out)
+
+
 def read_state(*, path: Path | str | None = None) -> dict[str, Any]:
     target = Path(path) if path else default_state_path()
     if not target.is_file():

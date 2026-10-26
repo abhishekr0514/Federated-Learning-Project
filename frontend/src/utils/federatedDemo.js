@@ -27,6 +27,36 @@ export function connectionStatusBadge(status) {
   return { label: s, tone: 'muted' };
 }
 
+/** Live fleet connection vs participation in a completed demo run (process may be stopped). */
+export function demoNodeStatusBadge(node) {
+  if (node?.process_alive) {
+    return connectionStatusBadge(node.connection_status);
+  }
+  if (node?.participation_status === 'completed_run') {
+    return { label: 'Participated (stopped)', tone: 'success' };
+  }
+  return connectionStatusBadge('offline');
+}
+
+export function demoNodeProcessDetail(node) {
+  if (node?.process_alive) return 'process running';
+  if (node?.participation_status === 'completed_run') {
+    return 'demo process stopped after successful run';
+  }
+  return 'process not running';
+}
+
+export function demoNodesSummaryLabel(orchestration) {
+  if (!orchestration) return '—';
+  const live = orchestration.demo_nodes_live_count ?? 0;
+  const participated = orchestration.demo_nodes_participated_count ?? 0;
+  const configured = orchestration.demo_supernodes?.length ?? 2;
+  if (orchestration.post_run_processes_stopped) {
+    return `${participated} participated in completed run · processes stopped · ${configured} configured`;
+  }
+  return `${live} live · ${configured} configured`;
+}
+
 export function demoStartBlockedReason(orchestration) {
   if (!orchestration) return 'Orchestration status not loaded yet.';
   if (!orchestration.orchestration_enabled) {

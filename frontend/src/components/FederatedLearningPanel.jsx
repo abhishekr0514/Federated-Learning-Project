@@ -23,6 +23,9 @@ import {
   flowerLifecycleLabel,
   connectionStatusBadge,
   demoStartBlockedReason,
+  demoNodeStatusBadge,
+  demoNodeProcessDetail,
+  demoNodesSummaryLabel,
 } from '../utils/federatedDemo';
 
 const DEMO_ROUNDS = 2;
@@ -143,7 +146,6 @@ export function FederatedLearningPanel() {
   };
 
   const demoNodes = accessDenied || statusError ? [] : orchestration?.demo_supernodes || [];
-  const onlineCount = demoNodes.filter((n) => n.connection_status === 'online').length;
   const startBlocked =
     accessDenied || statusError
       ? statusError || 'Orchestration status unavailable.'
@@ -270,6 +272,17 @@ export function FederatedLearningPanel() {
                 param hash init → global: {orchestration.initial_parameter_hash} → {orchestration.global_parameter_hash || '—'}
               </div>
             )}
+            {orchestration.aggregation_succeeded && orchestration.supervisor_phase_failed && (
+              <div style={{ color: '#fde047', marginTop: '0.35rem' }}>
+                Aggregation completed; supervisor reported a post-run error (see below). Round metrics preserved.
+              </div>
+            )}
+            {orchestration.post_run_processes_stopped && (
+              <div style={{ color: '#86efac', marginTop: '0.35rem', fontSize: '0.8125rem' }}>
+                Demo teardown complete: SuperLink and SuperNode processes are not running. Round results and
+                participation above reflect the finished run.
+              </div>
+            )}
             {orchestration.last_error && (
               <div style={{ color: '#fca5a5', marginTop: '0.35rem' }}>Error: {orchestration.last_error}</div>
             )}
@@ -352,16 +365,14 @@ export function FederatedLearningPanel() {
               </h4>
             </div>
             <span className="badge badge-sm" style={{ background: '#1e293b' }}>
-              {orchestration
-                ? `${onlineCount} online / ${demoNodes.length} configured`
-                : '—'}
+              {orchestration ? demoNodesSummaryLabel(orchestration) : '—'}
             </span>
           </div>
           <div style={{ padding: '0.5rem 0' }}>
             {demoNodes.length > 0 ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                 {demoNodes.map((n) => {
-                  const badge = connectionStatusBadge(n.connection_status);
+                  const badge = demoNodeStatusBadge(n);
                   return (
                     <div
                       key={n.demo_id}
@@ -385,8 +396,11 @@ export function FederatedLearningPanel() {
                       </div>
                       <div style={{ fontSize: '0.7rem', color: '#64748b', marginTop: '4px' }}>
                         {n.node_id != null && <>Flower node_id {String(n.node_id)} · </>}
+                        {n.fleet_status && n.participation_status !== 'completed_run' ? (
+                          <>fleet {n.fleet_status} · </>
+                        ) : null}
                         {n.process_pid ? <>pid {n.process_pid} · </> : null}
-                        process {n.process_alive ? 'running' : 'not running'}
+                        {demoNodeProcessDetail(n)}
                       </div>
                     </div>
                   );
@@ -414,8 +428,12 @@ export function FederatedLearningPanel() {
           <div style={{ padding: '0.75rem 1rem', fontSize: '0.8125rem', color: '#cbd5e1' }}>
             {(roundHistory?.rounds?.length > 0 || orchestration?.history?.length > 0) && (
               <ul style={{ margin: 0, paddingLeft: '1.1rem' }}>
-                {(roundHistory?.rounds || orchestration?.history || []).map((r) => (
-                  <li key={`round-${r.round}`}>
+                {(
+                  roundHistory?.rounds?.length
+                    ? roundHistory.rounds
+                    : orchestration?.history || []
+                ).map((r) => (
+                  <li key={`round-${r.run_id || 'run'}-${r.round}`}>
                     Round {r.round}: {r.successful_clients ?? r.successful_clients_last_round ?? '—'} ok,{' '}
                     {r.failed_clients ?? r.failed_clients_last_round ?? 0} failed
                     {r.global_parameter_hash ? ` · hash ${r.global_parameter_hash}` : ''}

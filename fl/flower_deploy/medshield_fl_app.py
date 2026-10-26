@@ -12,7 +12,7 @@ from typing import Any
 
 import numpy as np
 
-from run_state import parameter_vector_hash, write_state
+from run_state import parameter_vector_hash, read_state, upsert_round_history, write_state
 
 _STATE_PATH: list[str | None] = [None]
 
@@ -105,17 +105,17 @@ class _AuditingFedAvg(FedAvg):
         if aggregated is not None:
             arrays = parameters_to_ndarrays(aggregated)
             total = int(context_run_config_rounds())
-            from run_state import read_state
-
             prior = read_state(path=_state_file())
-            history = list(prior.get("round_history") or [])
-            history.append(
+            run_id = str(prior.get("run_id") or os.environ.get("MEDSHIELD_FL_RUN_ID") or "unknown")
+            history = upsert_round_history(
+                prior.get("round_history"),
                 {
                     "round": server_round,
                     "successful_clients": len(results),
                     "failed_clients": len(failures),
                     "global_parameter_hash": parameter_vector_hash(arrays),
-                }
+                },
+                run_id=run_id,
             )
             write_state(
                 {
