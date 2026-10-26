@@ -1,27 +1,80 @@
-"""Federated learning read-only experiment status (no campaign orchestration)."""
+"""Federated learning status and gated synthetic orchestration."""
 
-from fastapi import APIRouter, Depends, Query
+from __future__ import annotations
+
+from typing import Any, Dict, Optional
+
+from fastapi import APIRouter, Depends, Query, status
+from pydantic import BaseModel, Field
 
 from backend.app.api.dependencies import get_current_user, require_permission
-from backend.app.core.errors import FeatureNotImplementedError
+from backend.app.core.errors import ValidationAppError
 from backend.app.core.security import SystemPermission
 from backend.app.models.identity import User
 from backend.app.schemas.common import GenericSuccessEnvelope, RequestMetadata
 from backend.app.services.federated_experiment_service import get_tabular_experiment_status
+from backend.app.services.flower_orchestration_service import FlowerOrchestrationService
 
 router = APIRouter(prefix="/federated", tags=["Federated"])
 
 
+class FederatedStartRequest(BaseModel):
+    num_rounds: Optional[int] = Field(default=None, ge=1, le=20)
+
+
+@router.get("/status", response_model=GenericSuccessEnvelope)
+async def get_federated_orchestration_status(
+    _user: User = Depends(get_current_user),
+    __perm: User = Depends(require_permission(SystemPermission.FEDERATED_MONITOR)),
+) -> GenericSuccessEnvelope:
+    data = FlowerOrchestrationService.get_status()
+    return GenericSuccessEnvelope(
+        data=data,
+        metadata=RequestMetadata(message="Federated orchestration status retrieved."),
+    )
+
+
 @router.get("/rounds")
-async def list_fl_rounds():
-    """List historical federated training rounds."""
-    raise FeatureNotImplementedError("Flower federated learning orchestration pending FL phase implementation.")
+async def list_fl_rounds(
+    _user: User = Depends(get_current_user),
+    __perm: User = Depends(require_permission(SystemPermission.FEDERATED_MONITOR)),
+) -> Dict[str, Any]:
+    status_payload = FlowerOrchestrationService.get_status()
+    return {
+        "rounds": status_payload.get("history") or [],
+        "lifecycle": status_payload.get("lifecycle"),
+        "run_id": status_payload.get("run_id"),
+    }
 
 
-@router.post("/start")
-async def start_fl_campaign():
-    """Initiate a new federated training campaign."""
-    raise FeatureNotImplementedError("FL campaign trigger pending implementation.")
+@router.post("/start", response_model=GenericSuccessEnvelope, status_code=status.HTTP_202_ACCEPTED)
+async def start_fl_campaign(
+    body: FederatedStartRequest | None = None,
+    _user: User = Depends(get_current_user),
+    __perm: User = Depends(require_permission(SystemPermission.FEDERATED_MONITOR)),
+) -> GenericSuccessEnvelope:
+    try:
+        data = FlowerOrchestrationService.start_run(
+            num_rounds=body.num_rounds if body else None,
+        )
+    except RuntimeError as exc:
+        raise ValidationAppError(str(exc)) from exc
+    return GenericSuccessEnvelope(
+        data=data,
+        metadata=RequestMetadata(message="Federated synthetic run started."),
+    )
+
+
+@router.post("/stop", response_model=GenericSuccessEnvelope)
+async def stop_fl_campaign(
+    _user: User = Depends(get_current_user),
+    __perm: User = Depends(require_permission(SystemPermission.FEDERATED_MONITOR)),
+) -> GenericSuccessEnvelope:
+    data = FlowerOrchestrationService.stop_run()
+    return GenericSuccessEnvelope(
+        data=data,
+        metadata=RequestMetadata(message="Federated run stop requested."),
+    )
 
 
 @router.get("/experiments/tabular/latest", response_model=GenericSuccessEnvelope)

@@ -4,7 +4,7 @@ import { FeatureNotImplemented } from '../../components/ErrorStates';
 import { TabularFederatedResearchPanel } from '../../components/admin/TabularFederatedResearchPanel';
 import { ModelStatusPanel } from '../../components/ModelStatusPanel';
 import { DiagnosticWorkspace } from '../../components/DiagnosticWorkspace';
-import { FederatedLearningPanel } from '../../components/FederatedLearningPanel';
+import { FederatedDemoShell } from '../../components/FederatedDemoShell';
 import { apiGetAccessibleNodes } from '../../services/api';
 import { Server, Building2, ShieldCheck, Activity, Cpu, Radio, Sparkles } from 'lucide-react';
 
@@ -146,7 +146,7 @@ export function SuperAdminDashboard() {
       {/* FEDERATED LEARNING TAB */}
       {activeTab === 'federated' && (
         <div>
-          <FederatedLearningPanel />
+          <FederatedDemoShell />
 
           <div style={{ marginTop: '1.5rem' }}>
             <header style={{ marginBottom: '1rem' }}>

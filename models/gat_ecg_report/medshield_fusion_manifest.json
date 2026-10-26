@@ -7,6 +7,7 @@
   "target_definition": "PTB-XL proxy: NORM (0) vs MI/STTC (1). NOT validated clinical heart-disease diagnosis.",
   "prediction_type": "proxy_evaluation",
   "require_trained_checkpoint": true,
+  "checkpoint_trained": true,
   "encoder_manifest_path": "models/ecg_report_fusion/manifest.json",
   "modalities": {
     "ecg": 128,

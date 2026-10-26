@@ -58,6 +58,8 @@ class ECGReportReadiness:
     model_loaded: bool = False
     architecture_id: str = ARCHITECTURE_ID
 
+    runtime_initialized: bool = False
+
     def to_safe_dict(self) -> dict[str, Any]:
         return {
             "ready": self.ready,
@@ -68,6 +70,7 @@ class ECGReportReadiness:
             "normalization_present": self.normalization_present,
             "text_model_loaded": self.text_model_loaded,
             "model_loaded": self.model_loaded,
+            "runtime_initialized": self.runtime_initialized,
             "architecture_id": self.architecture_id,
         }
 
@@ -184,7 +187,12 @@ class ECGReportInferenceRuntime:
                     blockers.append(f"Forward pass verification failed: {type(exc).__name__}")
                     self._forward_verified = False
 
-        ready = len(blockers) == 0 and getattr(self, "_forward_verified", False)
+        runtime_initialized = self._model is not None or getattr(self, "_forward_verified", False)
+        if verify_forward_pass:
+            ready = len(blockers) == 0 and getattr(self, "_forward_verified", False)
+        else:
+            # Registry path: configuration + artifacts only (weights load on first inference).
+            ready = len(blockers) == 0
 
         return ECGReportReadiness(
             ready=ready,
@@ -195,6 +203,7 @@ class ECGReportInferenceRuntime:
             normalization_present=normalization_present,
             text_model_loaded=self._text_pipeline is not None,
             model_loaded=self._model is not None,
+            runtime_initialized=runtime_initialized,
             architecture_id=ARCHITECTURE_ID,
         )
 
@@ -259,22 +268,19 @@ class ECGReportInferenceRuntime:
                 logger.error("Failed to load ECG + report model: %s", type(exc).__name__)
                 raise RuntimeError("Failed to load ECG + report model artifacts.") from exc
 
-    def run_inference(
+    def _prepare_modalities(
         self,
         signal_mv: np.ndarray | Sequence[Sequence[float]],
         report_text: str,
         *,
         lead_order: Sequence[str] = LEAD_ORDER,
-    ) -> dict[str, Any]:
-        """
-        Execute forward pass on a 12-lead (12, 1000) ECG signal and clinical report string.
-        """
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Validate ECG + privacy-masked report and build model tensors."""
         self.ensure_loaded()
         assert self._model is not None
         assert self._norm_stats is not None
         assert self._text_pipeline is not None
 
-        # 1. ECG signal validation
         if not isinstance(signal_mv, np.ndarray):
             signal_mv = np.asarray(signal_mv, dtype=np.float32)
 
@@ -289,7 +295,6 @@ class ECGReportInferenceRuntime:
             reasons = "; ".join(quality.descriptions)
             raise ValueError(f"ECG signal failed quality check: {reasons}")
 
-        # 2. Clinical report validation & privacy masking
         if not isinstance(report_text, str) or not report_text.strip():
             raise ValueError("Clinical report text must be a non-empty string.")
 
@@ -300,11 +305,9 @@ class ECGReportInferenceRuntime:
         except Exception as exc:
             raise ValueError("Clinical report privacy masking error.") from exc
 
-        # 3. Preprocess ECG using training normalization
         norm_signal = self._norm_stats.transform(signal_mv)
-        ecg_tensor = torch.from_numpy(norm_signal).unsqueeze(0).to(self._device)  # (1, 12, 1000)
+        ecg_tensor = torch.from_numpy(norm_signal).unsqueeze(0).to(self._device)
 
-        # 4. Tokenize masked report
         tokenizer = self._text_pipeline.tokenizer
         tokenized = tokenizer(
             [masked_text],
@@ -315,8 +318,61 @@ class ECGReportInferenceRuntime:
         )
         input_ids = tokenized["input_ids"].to(self._device)
         attention_mask = tokenized["attention_mask"].to(self._device)
+        return ecg_tensor, input_ids, attention_mask
 
-        # 5. Forward pass on CPU
+    def extract_encoder_embeddings(
+        self,
+        signal_mv: np.ndarray | Sequence[Sequence[float]],
+        report_text: str,
+        *,
+        lead_order: Sequence[str] = LEAD_ORDER,
+    ) -> dict[str, Any]:
+        """
+        Return 128-d ECG and clinical-text embeddings from the authorized encoder stack.
+        Privacy masking is applied server-side; raw report text is not returned.
+        """
+        ecg_tensor, input_ids, attention_mask = self._prepare_modalities(
+            signal_mv, report_text, lead_order=lead_order
+        )
+        assert self._model is not None
+
+        with torch.inference_mode():
+            _logit, ecg_emb, text_emb = self._model(
+                ecg=ecg_tensor,
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+            )
+            ecg_vec = ecg_emb.squeeze(0).detach().cpu().numpy().astype(np.float64)
+            text_vec = text_emb.squeeze(0).detach().cpu().numpy().astype(np.float64)
+
+        if ecg_vec.shape != (128,) or text_vec.shape != (128,):
+            raise RuntimeError("Encoder produced unexpected embedding shape.")
+        if not np.all(np.isfinite(ecg_vec)) or not np.all(np.isfinite(text_vec)):
+            raise RuntimeError("Encoder produced non-finite embedding values.")
+
+        return {
+            "ecg_embedding": [float(x) for x in ecg_vec.tolist()],
+            "text_embedding": [float(x) for x in text_vec.tolist()],
+            "architecture_id": ARCHITECTURE_ID,
+            "model_version_tag": DEFAULT_VERSION_TAG,
+            "privacy_validation_status": "VALIDATED",
+        }
+
+    def run_inference(
+        self,
+        signal_mv: np.ndarray | Sequence[Sequence[float]],
+        report_text: str,
+        *,
+        lead_order: Sequence[str] = LEAD_ORDER,
+    ) -> dict[str, Any]:
+        """
+        Execute forward pass on a 12-lead (12, 1000) ECG signal and clinical report string.
+        """
+        ecg_tensor, input_ids, attention_mask = self._prepare_modalities(
+            signal_mv, report_text, lead_order=lead_order
+        )
+        assert self._model is not None
+
         with torch.inference_mode():
             logit, _ecg_emb, _text_emb = self._model(
                 ecg=ecg_tensor,

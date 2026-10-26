@@ -16,6 +16,8 @@ from backend.app.models.identity import ClinicianProfile, User
 from backend.app.models.ml_models import DiagnosisPrediction, ModelVersion
 from backend.app.models.patient import Patient
 from backend.app.schemas.ecg_report_inference import (
+    ECGReportEmbedRequest,
+    ECGReportEmbedResponse,
     ECGReportEvaluateRequest,
     ECGReportEvaluateResponse,
     ECGReportReadinessResponse,
@@ -35,13 +37,13 @@ def _model_dir() -> Path:
 
 class ECGReportInferenceService:
     @staticmethod
-    def get_readiness() -> Dict[str, Any]:
+    def get_readiness(*, verify_forward_pass: bool = False) -> Dict[str, Any]:
         """Assess readiness safely without leaking internal paths or secrets."""
         runtime = get_ecg_report_runtime(
             _model_dir(),
             enabled=settings.ECG_REPORT_INFERENCE_ENABLED,
         )
-        readiness = runtime.assess_readiness()
+        readiness = runtime.assess_readiness(verify_forward_pass=verify_forward_pass)
         payload = readiness.to_safe_dict()
         payload["environment"] = settings.ENVIRONMENT
         return payload
@@ -54,6 +56,53 @@ class ECGReportInferenceService:
             enabled=settings.ECG_REPORT_INFERENCE_ENABLED,
         )
         runtime.ensure_loaded()
+
+    @staticmethod
+    async def embed_modalities(*, body: ECGReportEmbedRequest) -> ECGReportEmbedResponse:
+        """Produce 128-d ECG and text embeddings via the authorized encoder checkpoint."""
+        runtime = get_ecg_report_runtime(
+            _model_dir(),
+            enabled=settings.ECG_REPORT_INFERENCE_ENABLED,
+        )
+        readiness = runtime.assess_readiness()
+        if not readiness.ready:
+            if readiness.manifest_present and readiness.checkpoint_present:
+                try:
+                    runtime.ensure_loaded()
+                    readiness = runtime.assess_readiness()
+                except Exception as exc:
+                    logger.error("ECG + report runtime load failed: %s", type(exc).__name__)
+                    raise InferenceNotReadyError(
+                        "ECG + report encoder is not ready for safe execution.",
+                        details=readiness.to_safe_dict(),
+                    ) from exc
+            if not readiness.ready:
+                raise InferenceNotReadyError(
+                    "ECG + report encoder is not ready for safe execution.",
+                    details=readiness.to_safe_dict(),
+                )
+
+        try:
+            encoded = runtime.extract_encoder_embeddings(
+                signal_mv=body.ecg_leads,
+                report_text=body.report_text,
+            )
+        except ValueError as exc:
+            raise ValidationAppError(str(exc)) from exc
+        except RuntimeError as exc:
+            raise InferenceNotReadyError(str(exc)) from exc
+        except Exception as exc:
+            logger.error("Encoder embedding extraction failed: %s", type(exc).__name__)
+            raise ValidationAppError("Encoder embedding extraction failed.") from exc
+
+        return ECGReportEmbedResponse(
+            status="ENCODED",
+            ecg_embedding=encoded["ecg_embedding"],
+            text_embedding=encoded["text_embedding"],
+            architecture_id=encoded["architecture_id"],
+            model_version_tag=encoded["model_version_tag"],
+            privacy_validation_status=encoded["privacy_validation_status"],
+        )
 
     @staticmethod
     async def evaluate(

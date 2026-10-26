@@ -10,7 +10,7 @@ from sqlalchemy.orm import selectinload
 
 from backend.app.core.errors import AuthenticationAppError, ForbiddenError, NotFoundError
 from backend.app.core.request_context import get_request_id
-from backend.app.core.security import SystemPermission, UserRole, decode_token
+from backend.app.core.security import ROLE_PERMISSIONS, SystemPermission, UserRole, decode_token
 from backend.app.db.session import AsyncSessionLocal
 from backend.app.models.identity import ClinicianProfile, Hospital, HospitalMembership, User
 from backend.app.models.patient import Patient, PatientClinicianAssignment, PatientHospitalAssociation
@@ -93,11 +93,9 @@ def require_permission(*required_permissions: SystemPermission) -> Callable:
         user_role_names = [r.name for r in current_user.roles]
         
         # Super Admin override check
-        if UserRole.SUPER_ADMIN.value in user_role_names or UserRole.SUPER_ADMIN in user_role_names:
+        if UserRole.SUPER_ADMIN.value in user_role_names:
             return current_user
 
-        from backend.app.core.security import ROLE_PERMISSIONS, UserRole
-        
         granted_permissions = set()
         for role_name in user_role_names:
             try:

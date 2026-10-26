@@ -37,13 +37,27 @@ export function ClinicalStatusBadge({ status }) {
       badgeClass = 'badge badge-info';
       label = 'NOT MEASURED';
       break;
+    case 'OPERATIONAL':
+      badgeClass = 'badge badge-success';
+      label = 'OPERATIONAL';
+      break;
+    case 'READY':
+    case 'INFRASTRUCTURE_READY':
+      badgeClass = 'badge badge-info';
+      label = 'READY';
+      break;
+    case 'CONFIGURATION_REQUIRED':
+    case 'MISSING_DEPENDENCY':
+      badgeClass = 'badge badge-warning';
+      label = 'CONFIG REQUIRED';
+      break;
+    case 'UNAVAILABLE':
+      badgeClass = 'badge badge-danger';
+      label = 'UNAVAILABLE';
+      break;
     case 'NOT_IMPLEMENTED':
       badgeClass = 'badge badge-purple';
       label = 'NOT IMPLEMENTED';
-      break;
-    case 'MISSING_DEPENDENCY':
-      badgeClass = 'badge badge-warning';
-      label = 'MISSING DEPENDENCY';
       break;
     case 'FORBIDDEN':
     case 'ERROR':

@@ -18,6 +18,8 @@ from backend.app.core.security import UserRole
 from backend.app.models.identity import ClinicianProfile, User
 from backend.app.models.patient import Patient, PatientClinicianAssignment
 from backend.app.schemas.ecg_report_inference import (
+    ECGReportEmbedRequest,
+    ECGReportEmbedResponse,
     ECGReportEvaluateRequest,
     ECGReportEvaluateResponse,
     ECGReportReadinessResponse,
@@ -28,12 +30,34 @@ router = APIRouter(prefix="/ecg-report", tags=["ECG Report Inference"])
 
 
 @router.get("/readiness", response_model=ECGReportReadinessResponse)
-async def get_ecg_report_readiness() -> Dict[str, Any]:
+async def get_ecg_report_readiness(
+    verify_forward_pass: bool = Query(False, description="Run expensive forward-pass verification"),
+) -> Dict[str, Any]:
     """
     Safe readiness diagnostics for ECG + clinical report model.
     Does not expose filesystem paths or credentials.
     """
-    return ECGReportInferenceService.get_readiness()
+    return ECGReportInferenceService.get_readiness(verify_forward_pass=verify_forward_pass)
+
+
+@router.post(
+    "/embed",
+    response_model=ECGReportEmbedResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Encoder embeddings for GAT fusion (128-d ECG + 128-d text)",
+)
+async def embed_ecg_report_modalities(
+    body: ECGReportEmbedRequest,
+    current_user: User = Depends(
+        require_role(UserRole.CLINICIAN, UserRole.HOSPITAL_ADMIN, UserRole.SUPER_ADMIN)
+    ),
+) -> ECGReportEmbedResponse:
+    """
+    Privacy-mask and encode modalities using the ECG-report fusion encoder stack.
+    Does not run the fusion head or persist predictions. Raw report text is not echoed.
+    """
+    _ = current_user
+    return await ECGReportInferenceService.embed_modalities(body=body)
 
 
 @router.post(

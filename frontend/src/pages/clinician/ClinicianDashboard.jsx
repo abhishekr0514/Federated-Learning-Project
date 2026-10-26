@@ -6,9 +6,12 @@ import {
   apiUploadClinicalDocument,
   apiProcessClinicalDocument,
 } from '../../services/api';
+import { isGatDiagnosticWorkflowEnabled } from '../../utils/capabilityNav';
+import { fetchPlatformCapabilities } from '../../services/capabilityClient';
 import { DiagnosticWorkspace } from '../../components/DiagnosticWorkspace';
+import { CausalAnalysisPanel } from '../../components/CausalAnalysisPanel';
 import { ModelStatusPanel } from '../../components/ModelStatusPanel';
-import { FederatedLearningPanel } from '../../components/FederatedLearningPanel';
+import { FederatedDemoShell } from '../../components/FederatedDemoShell';
 import {
   ClinicalEmptyState,
   ClinicalNotImplemented,
@@ -47,9 +50,12 @@ export function ClinicianDashboard() {
   // Loading & error states
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [overviewError, setOverviewError] = useState(null);
+  const [diagnosisTabError, setDiagnosisTabError] = useState(null);
 
   // Overview data
   const [overview, setOverview] = useState(null);
+  const [capabilityReport, setCapabilityReport] = useState(null);
 
   // Patients data & pagination
   const [patients, setPatients] = useState([]);
@@ -81,6 +87,8 @@ export function ClinicianDashboard() {
   const toggleSection = (key) => {
     setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }));
   };
+
+  const dossierAiCapabilities = patientDossier?.ai_capabilities || {};
 
   // Documents data & pagination
   const [documents, setDocuments] = useState([]);
@@ -159,35 +167,54 @@ export function ClinicianDashboard() {
     }
   };
 
-  // Fetch overview telemetry
+  const [capabilityError, setCapabilityError] = useState(null);
+
+  const fetchCapabilities = useCallback(async () => {
+    try {
+      const report = await fetchPlatformCapabilities();
+      setCapabilityReport(report);
+      setCapabilityError(null);
+    } catch (err) {
+      setCapabilityError(err);
+      console.warn('Platform capabilities unavailable:', err?.message || err);
+    }
+  }, []);
+
+  // Fetch overview telemetry (must stay fast — heavy cohort builds are not on this path)
   const fetchOverview = useCallback(async () => {
     setLoading(true);
-    setError(null);
+    setOverviewError(null);
     try {
-      const data = await apiRequest('/api/v1/clinician/overview');
+      const data = await apiRequest('/api/v1/clinician/overview', { timeout: 60000 });
       setOverview(data);
     } catch (err) {
-      setError(err);
+      setOverviewError(err);
     } finally {
       setLoading(false);
     }
   }, []);
 
+  useEffect(() => {
+    fetchCapabilities();
+  }, [fetchCapabilities]);
+
   // Fetch assigned patients
   const fetchPatients = useCallback(async () => {
     setLoading(true);
-    setError(null);
+    if (activeTab === 'patients') setError(null);
+    if (activeTab === 'diagnosis') setDiagnosisTabError(null);
     try {
       const offset = patientPage * patientLimit;
       const data = await apiRequest(`/api/v1/clinician/patients?limit=${patientLimit}&offset=${offset}`);
       setPatients(data.patients || []);
       setPatientTotal(data.total_count || 0);
     } catch (err) {
-      setError(err);
+      if (activeTab === 'diagnosis') setDiagnosisTabError(err);
+      else setError(err);
     } finally {
       setLoading(false);
     }
-  }, [patientPage]);
+  }, [patientPage, activeTab]);
 
   const fetchEligiblePatients = useCallback(async () => {
     setEligibleLoading(true);
@@ -289,7 +316,11 @@ export function ClinicianDashboard() {
     } else if (activeTab === 'documents') {
       fetchDocuments();
     } else if (activeTab === 'diagnosis') {
+      fetchCapabilities();
+      fetchPatients();
       fetchDiagnosis();
+    } else if (activeTab === 'causal') {
+      fetchCapabilities();
     }
   }, [activeTab, fetchOverview, fetchPatients, fetchEligiblePatients, fetchDocuments, fetchDiagnosis, selectedPatientId]);
 
@@ -362,15 +393,26 @@ export function ClinicianDashboard() {
         </div>
       </div>
 
-      {/* Global Error Banner */}
-      {error && (
+      {overviewError && activeTab === 'dashboard' && (
+        <div style={{ marginBottom: '1.5rem' }}>
+          <ClinicalError
+            title="Overview telemetry unavailable"
+            message={`GET /api/v1/clinician/overview — ${overviewError.message}${
+              overviewError.code ? ` (${overviewError.code})` : ''
+            }`}
+          />
+        </div>
+      )}
+
+      {/* Tab-scoped request errors (not overview / diagnosis patient list) */}
+      {error && activeTab !== 'diagnosis' && (
         <div style={{ marginBottom: '1.5rem' }}>
           {error.status === 403 ? (
             <ClinicalForbidden title="Clinician Access Forbidden" description={error.message} />
           ) : error.status === 404 ? (
             <ClinicalNotFound title="Clinical Resource Not Found" description={error.message} />
           ) : (
-            <ClinicalError title="Telemetry Request Failed" message={error.message} />
+            <ClinicalError title="Request failed" message={error.message} />
           )}
         </div>
       )}
@@ -527,11 +569,19 @@ export function ClinicianDashboard() {
                     </thead>
                     <tbody>
                       <tr>
-                        <td><strong>Multimodal GAT Fusion</strong></td>
-                        <td>ECG (1D CNN) + Notes (BERT) + Tabular</td>
-                        <td><ClinicalStatusBadge status={overview.capabilities.multimodal_gat_fusion || overview.capabilities.clinical_ai_inference} /></td>
+                        <td><strong>ECG + Report Fusion</strong></td>
+                        <td>12-lead waveform + masked clinical report</td>
+                        <td><ClinicalStatusBadge status={overview.capabilities.ecg_report_inference || overview.capabilities.clinical_ai_inference} /></td>
                         <td style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
-                          Runtime prediction suspended; no risk scores manufactured.
+                          Diagnostic Studio primary workflow; no fabricated scores when unavailable.
+                        </td>
+                      </tr>
+                      <tr>
+                        <td><strong>Two-Modality GAT Fusion</strong></td>
+                        <td>128d ECG + 128d clinical-text embeddings</td>
+                        <td><ClinicalStatusBadge status={overview.capabilities.multimodal_gat_fusion} /></td>
+                        <td style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
+                          Requires FUSION_INFERENCE_ENABLED and trained GAT checkpoint.
                         </td>
                       </tr>
                       <tr>
@@ -588,9 +638,7 @@ export function ClinicianDashboard() {
       {/* =========================================================================
           TAB: FEDERATED LEARNING PANEL
       ========================================================================= */}
-      {activeTab === 'federated' && (
-        <FederatedLearningPanel />
-      )}
+      {activeTab === 'federated' && <FederatedDemoShell />}
 
       {/* =========================================================================
           TAB 2: ASSIGNED PATIENTS (Directory & Dossier Drill-down)
@@ -792,12 +840,12 @@ export function ClinicianDashboard() {
                           </span>
                         </div>
                       </div>
-                      <ClinicalStatusBadge status="NOT_IMPLEMENTED" />
+                      <ClinicalStatusBadge status={dossierAiCapabilities.clinical_ai_inference || 'UNAVAILABLE'} />
                     </div>
                     <div style={{ marginTop: '0.75rem', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
                       <p>
-                        Clinical AI inference runtime is offline. The system strictly adheres to the Zero Mock Data contract:
-                        no synthetic diagnoses, risk levels, or confidence scores are fabricated.
+                        Status reflects live backend readiness for ECG+report inference. Zero Mock Data: no synthetic
+                        diagnoses, risk levels, or confidence scores are fabricated.
                       </p>
                     </div>
                   </div>
@@ -830,7 +878,7 @@ export function ClinicianDashboard() {
                             Clinical inference is not implemented. Individual prediction confidence is not computed.
                           </p>
                           <div style={{ marginTop: '0.5rem' }}>
-                            <ClinicalStatusBadge status="NOT_IMPLEMENTED" />
+                            <ClinicalStatusBadge status={patientDossier.diagnosis.status || 'NO_DATA'} />
                           </div>
                         </div>
                       )}
@@ -848,7 +896,7 @@ export function ClinicianDashboard() {
                         {openSections.whyPrediction ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
                         <span style={{ fontWeight: '600' }}>Why this prediction? (Feature Attribution)</span>
                       </div>
-                      <ClinicalStatusBadge status="NOT_IMPLEMENTED" />
+                      <ClinicalStatusBadge status={dossierAiCapabilities.dice_counterfactuals || 'NOT_IMPLEMENTED'} />
                     </div>
                     {openSections.whyPrediction && (
                       <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid var(--border-color)' }}>
@@ -875,7 +923,7 @@ export function ClinicianDashboard() {
                         {openSections.whatChange ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
                         <span style={{ fontWeight: '600' }}>What could change the prediction? (Counterfactuals)</span>
                       </div>
-                      <ClinicalStatusBadge status="NOT_IMPLEMENTED" />
+                      <ClinicalStatusBadge status={dossierAiCapabilities.dice_counterfactuals || 'NOT_IMPLEMENTED'} />
                     </div>
                     {openSections.whatChange && (
                       <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid var(--border-color)' }}>
@@ -902,7 +950,7 @@ export function ClinicianDashboard() {
                         {openSections.causalInsights ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
                         <span style={{ fontWeight: '600' }}>Causal Insights & Interventions (DoWhy)</span>
                       </div>
-                      <ClinicalStatusBadge status="NOT_IMPLEMENTED" />
+                      <ClinicalStatusBadge status={dossierAiCapabilities.dowhy_causal || 'NOT_IMPLEMENTED'} />
                     </div>
                     {openSections.causalInsights && (
                       <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid var(--border-color)' }}>
@@ -925,7 +973,7 @@ export function ClinicianDashboard() {
                         <Lock size={18} className="text-muted" />
                         <span style={{ fontWeight: '600' }}>Clinical Decision Support (Disabled)</span>
                       </div>
-                      <ClinicalStatusBadge status="NOT_IMPLEMENTED" />
+                      <ClinicalStatusBadge status={dossierAiCapabilities.clinical_decision_support || 'NOT_IMPLEMENTED'} />
                     </div>
                     <div style={{ marginTop: '0.5rem' }}>
                       <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
@@ -1504,13 +1552,54 @@ export function ClinicianDashboard() {
       {/* =========================================================================
           TAB 4: GAT DIAGNOSIS
       ========================================================================= */}
+      {capabilityError && (activeTab === 'diagnosis' || activeTab === 'causal') && (
+        <div className="notice-banner" style={{ marginBottom: '1rem', borderLeftColor: 'var(--warning)' }}>
+          GET /api/v1/capabilities — {capabilityError.message}
+        </div>
+      )}
+
+      {diagnosisTabError && activeTab === 'diagnosis' && (
+        <div style={{ marginBottom: '1rem' }}>
+          <ClinicalError
+            title="Assigned patients unavailable"
+            message={`GET /api/v1/clinician/patients — ${diagnosisTabError.message}`}
+          />
+        </div>
+      )}
+
       {activeTab === 'diagnosis' && (
         <div>
-          <ClinicalNotImplemented
-            title="Multimodal GAT Diagnostic Inference Pipeline"
-            moduleName="GAT Neural Fusion Classifier"
-            description="Diagnostic inference is currently not enabled in this deployment. Evaluated predictions will render here once model weights are validated."
-          />
+          {(() => {
+            const caps = capabilityReport?.capabilities || overview?.capabilities;
+            const details = capabilityReport?.capability_details || overview?.capability_details;
+            const workflowReady = isGatDiagnosticWorkflowEnabled(caps, details);
+            return workflowReady ? (
+            <>
+              <div className="notice-banner" style={{ marginBottom: '1rem', fontSize: '0.8125rem' }}>
+                <strong>GAT Diagnosis</strong> uses the same verified encoder + GAT fusion workflow as Diagnostic Studio.
+                {(details?.multimodal_gat_fusion?.reason || details?.ecg_report_inference?.reason) && (
+                  <span style={{ display: 'block', marginTop: 4, color: 'var(--text-muted)' }}>
+                    {details?.multimodal_gat_fusion?.reason || details?.ecg_report_inference?.reason}
+                  </span>
+                )}
+              </div>
+              <DiagnosticWorkspace
+                assignedPatients={patients}
+                onPredictionComplete={() => fetchDiagnosis()}
+              />
+            </>
+            ) : (
+            <ClinicalNotImplemented
+              title="Multimodal GAT Diagnostic Inference Pipeline"
+              moduleName="GAT Neural Fusion Classifier"
+              description={
+                details?.multimodal_gat_fusion?.reason
+                  || details?.ecg_report_inference?.reason
+                  || 'Inference is not ready. Check capability matrix for blockers (checkpoint, FUSION_INFERENCE_ENABLED, encoder readiness).'
+              }
+            />
+            );
+          })()}
 
           <div style={{ marginTop: '1.5rem' }}>
             <div className="card">
@@ -1567,13 +1656,7 @@ export function ClinicianDashboard() {
       {/* =========================================================================
           TAB 6: DoWhy CAUSAL AI
       ========================================================================= */}
-      {activeTab === 'causal' && (
-        <ClinicalNotImplemented
-          title="DoWhy Causal Inference & Interventions"
-          moduleName="DoWhy Causal Graph Engine"
-          description="Causal DAG estimation, backdoor adjustment, and treatment intervention effect evaluation are offline pending causal module integration. Zero treatment suggestions are simulated."
-        />
-      )}
+      {activeTab === 'causal' && <CausalAnalysisPanel />}
     </ClinicianLayout>
   );
 }

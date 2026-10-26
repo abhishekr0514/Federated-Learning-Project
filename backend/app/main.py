@@ -73,23 +73,9 @@ async def health_check():
     """
     req_id = get_current_request_id()
 
-    # Query ECG+Report runtime readiness (non-raising)
-    ecg_report_status = "unknown"
-    try:
-        from backend.app.services.ecg_report_inference_service import ECGReportInferenceService
-        readiness = ECGReportInferenceService.get_readiness()
-        ecg_report_status = "operational" if readiness.get("ready") else "not_ready"
-    except Exception:
-        ecg_report_status = "unavailable"
-
-    gat_status = "not_ready"
-    try:
-        from backend.app.services.gat_fusion_service import GATFusionService
-
-        gat_readiness = GATFusionService.get_readiness()
-        gat_status = "operational" if gat_readiness.get("ready") else "not_ready"
-    except Exception:
-        gat_status = "unavailable"
+    # ML readiness is exposed via /api/v1/capabilities — keep /health fast for UI probes.
+    ecg_report_status = "see_capabilities"
+    gat_status = "see_capabilities"
 
     db_status = "unknown"
     try:

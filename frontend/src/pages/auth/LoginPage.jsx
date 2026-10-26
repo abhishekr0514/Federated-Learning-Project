@@ -15,6 +15,7 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import { AuthLayout } from '../../layouts/AuthLayout';
 import { apiGetHealth } from '../../services/api';
+import { SUPERLINK_DEMO_LOGIN_HINT } from '../../components/FederatedDemoAccessGate';
 
 export function LoginPage() {
   const { login, error: authError } = useAuth();
@@ -22,6 +23,7 @@ export function LoginPage() {
   const [password, setPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [localError, setLocalError] = useState(null);
+  const [demoHint, setDemoHint] = useState(null);
 
   // Backend connection indicator
   const [backendStatus, setBackendStatus] = useState('checking'); // 'checking' | 'connected' | 'disconnected'
@@ -40,6 +42,11 @@ export function LoginPage() {
 
   useEffect(() => {
     checkBackend();
+    if (sessionStorage.getItem(SUPERLINK_DEMO_LOGIN_HINT) === '1') {
+      sessionStorage.removeItem(SUPERLINK_DEMO_LOGIN_HINT);
+      setDemoHint('SuperLink demo: sign in with Super Admin below (admin@medshield.org).');
+      setEmail('admin@medshield.org');
+    }
   }, []);
 
   const handleSubmit = async (e) => {
@@ -66,10 +73,13 @@ export function LoginPage() {
     setPassword(quickPassword);
     setLocalError(null);
     setIsSubmitting(true);
-    login(quickEmail, quickPassword).catch((err) => {
-      setLocalError(err.message || 'Quick login failed');
-      setIsSubmitting(false);
-    });
+    login(quickEmail, quickPassword)
+      .catch((err) => {
+        setLocalError(err.message || 'Quick login failed');
+      })
+      .finally(() => {
+        setIsSubmitting(false);
+      });
   };
 
   return (
@@ -101,6 +111,13 @@ export function LoginPage() {
             )}
           </div>
         </div>
+
+        {demoHint && (
+          <div className="notice-banner" style={{ borderLeftColor: '#3b82f6', marginBottom: '1.25rem', background: '#0f172a' }}>
+            <Shield size={16} style={{ display: 'inline', marginRight: '6px', verticalAlign: 'middle' }} />
+            <span>{demoHint}</span>
+          </div>
+        )}
 
         {(localError || authError) && (
           <div className="notice-banner" style={{ borderLeftColor: 'var(--danger)', marginBottom: '1.25rem' }}>
@@ -169,8 +186,19 @@ export function LoginPage() {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
             <button
               type="button"
+              className="btn btn-primary btn-sm"
+              onClick={() => handleQuickLogin('admin@medshield.org', 'ValidPassword123!')}
+              disabled={isSubmitting}
+              style={{ justifyContent: 'flex-start', fontSize: '0.75rem', gridColumn: '1 / -1' }}
+            >
+              <Shield size={13} style={{ marginRight: '6px', flexShrink: 0 }} />
+              <span>Super Admin — SuperLink demo</span>
+            </button>
+
+            <button
+              type="button"
               className="btn btn-secondary btn-sm"
-              onClick={() => handleQuickLogin('dr_metro@metro.org', 'Password123!')}
+              onClick={() => handleQuickLogin('dr_metro@metro.org', 'ValidPassword123!')}
               disabled={isSubmitting}
               style={{ justifyContent: 'flex-start', fontSize: '0.75rem' }}
             >
@@ -181,7 +209,7 @@ export function LoginPage() {
             <button
               type="button"
               className="btn btn-secondary btn-sm"
-              onClick={() => handleQuickLogin('admin_a@metro.org', 'Password123!')}
+              onClick={() => handleQuickLogin('admin_a@metro.org', 'ValidPassword123!')}
               disabled={isSubmitting}
               style={{ justifyContent: 'flex-start', fontSize: '0.75rem' }}
             >
@@ -192,18 +220,7 @@ export function LoginPage() {
             <button
               type="button"
               className="btn btn-secondary btn-sm"
-              onClick={() => handleQuickLogin('admin@medshield.org', 'Password123!')}
-              disabled={isSubmitting}
-              style={{ justifyContent: 'flex-start', fontSize: '0.75rem' }}
-            >
-              <Shield size={13} className="text-primary" style={{ marginRight: '6px', flexShrink: 0 }} />
-              <span>Super Admin</span>
-            </button>
-
-            <button
-              type="button"
-              className="btn btn-secondary btn-sm"
-              onClick={() => handleQuickLogin('patient_alice@example.com', 'Password123!')}
+              onClick={() => handleQuickLogin('patient_alice@example.com', 'ValidPassword123!')}
               disabled={isSubmitting}
               style={{ justifyContent: 'flex-start', fontSize: '0.75rem' }}
             >

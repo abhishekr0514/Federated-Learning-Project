@@ -319,6 +319,9 @@ async def test_clinician_can_access_assigned_patient(seeded_clinician_env):
             "NOT_IMPLEMENTED",
             "NOT_ENABLED",
             "MISSING_DEPENDENCY",
+            "AVAILABLE",
+            "CONFIGURATION_REQUIRED",
+            "UNAVAILABLE",
         )
         assert ov["capabilities"]["dice_counterfactuals"] in (
             "NOT_IMPLEMENTED",
@@ -338,6 +341,9 @@ async def test_clinician_can_access_assigned_patient(seeded_clinician_env):
             "NOT_IMPLEMENTED",
             "NOT_ENABLED",
             "MISSING_DEPENDENCY",
+            "AVAILABLE",
+            "CONFIGURATION_REQUIRED",
+            "UNAVAILABLE",
         )
 
 

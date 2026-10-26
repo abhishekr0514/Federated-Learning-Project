@@ -159,14 +159,24 @@ class HospitalService:
             db_latency_ms = None
             db_status = "ERROR"
 
-        # Count active non-revoked sessions
+        # Non-revoked refresh-token sessions that have not expired (global auth table).
+        now = datetime.now(timezone.utc)
+        active_sessions = 0
+        session_tracking = "AVAILABLE"
+        session_definition = (
+            "Count of non-revoked UserSession rows with expires_at in the future "
+            "(refresh-token sessions, not concurrent UI tabs)."
+        )
         try:
-            session_stmt = select(func.count(UserSession.id)).where(UserSession.is_revoked.isnot(True))
+            session_stmt = select(func.count(UserSession.id)).where(
+                UserSession.is_revoked.isnot(True),
+                UserSession.expires_at > now,
+            )
             session_res = await db.execute(session_stmt)
             active_sessions = session_res.scalar_one() or 0
         except Exception as e:
             logger.error(f"Active sessions query error: {e}")
-            active_sessions = 0
+            session_tracking = "ERROR"
 
         return {
             "status": "AVAILABLE",
@@ -184,14 +194,20 @@ class HospitalService:
                 "latency_ms": db_latency_ms,
             },
             "active_sessions_count": active_sessions,
+            "active_sessions": {
+                "status": session_tracking,
+                "count": active_sessions,
+                "definition": session_definition,
+                "hospital_scoped": False,
+            },
             "system_hardware": {
                 "cpu_usage": "NOT_MEASURED",
                 "memory_usage": "NOT_MEASURED",
                 "disk_usage": "NOT_MEASURED",
                 "gpu_usage": "NOT_MEASURED",
-                "worker_health": "NOT_IMPLEMENTED",
-                "queue_depth": "NOT_IMPLEMENTED",
-                "inference_latency": "NOT_IMPLEMENTED",
+                "worker_health": "NOT_MEASURED",
+                "queue_depth": "NOT_MEASURED",
+                "inference_latency": "NOT_MEASURED",
                 "message": "Infrastructure hardware and worker metrics are not measured by current backend configuration.",
             },
             "generated_at": datetime.now(timezone.utc).isoformat(),

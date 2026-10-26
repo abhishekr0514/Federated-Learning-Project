@@ -1,7 +1,7 @@
 import time
 import logging
 from typing import Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, text
 from backend.app.models.identity import User, Hospital, HospitalMembership, UserSession
@@ -73,7 +73,11 @@ class AdminService:
             db_status = "UNHEALTHY"
 
         try:
-            session_stmt = select(func.count(UserSession.id)).where(UserSession.is_revoked.isnot(True))
+            now = datetime.now(timezone.utc)
+            session_stmt = select(func.count(UserSession.id)).where(
+                UserSession.is_revoked.isnot(True),
+                UserSession.expires_at > now,
+            )
             session_res = await db.execute(session_stmt)
             active_sessions = session_res.scalar_one() or 0
         except Exception as e:

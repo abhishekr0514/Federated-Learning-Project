@@ -84,9 +84,42 @@ class Settings(BaseSettings):
     FUSION_MODEL_DIR: str = Field(default="models/gat_ecg_report")
     FUSION_INFERENCE_ENABLED: bool = Field(default=False)
 
+    # Observational causal analysis (DoWhy, GAT-grounded PTB-XL cohort)
+    CAUSAL_ANALYSIS_ENABLED: bool = Field(default=True)
+    CAUSAL_GAT_EMBEDDING_CACHE_PATH: str = Field(
+        default="",
+        description="Optional path to embedding_cache_train.pt; auto-discovered when empty.",
+    )
+    CAUSAL_PTBNXL_ROOT: str = Field(
+        default="",
+        description="Optional PTB-XL root for metadata alignment; defaults to data/raw/ptb-xl.",
+    )
+    CAUSAL_COHORT_PSEUDONYM_SALT: str = Field(default="medshield-fl-research-cohort-v1")
+    CAUSAL_ANALYSIS_MAX_ROWS: int = Field(default=8000, ge=500, le=70000)
+    CAUSAL_ANALYSIS_MIN_SAMPLE_SIZE: int = Field(default=500, ge=100)
+    CAUSAL_EFFECT_ESTIMATION_ALLOWED: bool = Field(
+        default=False,
+        description=(
+            "When false (default), POST /causal/analyze is blocked regardless of DoWhy availability. "
+            "Does not imply a scientifically validated causal design when true."
+        ),
+    )
+
     # Federated Learning Settings
     FLOWER_SERVER_ADDRESS: str = "127.0.0.1:8080"
-    FLOWER_NUM_ROUNDS: int = 10
+    FLOWER_NUM_ROUNDS: int = Field(default=2, ge=1, le=100)
+    FLOWER_ORCHESTRATION_ENABLED: bool = Field(default=False)
+    FLOWER_TRAINING_ENABLED: bool = Field(default=False)
+    FLOWER_DEPLOYMENT_MODE: str = Field(
+        default="superlink",
+        description="superlink = real SuperLink+SuperNode processes; legacy_inprocess = deprecated thread smoke only",
+    )
+    FLOWER_APP_DIR: str = "fl/flower_deploy"
+    FLOWER_TLS_CERT_DIR: str = "deployment/flower/dev"
+    FLOWER_SUPERLINK_CONTROL_ADDRESS: str = "127.0.0.1:9093"
+    FLOWER_FLEET_API_ADDRESS: str = "127.0.0.1:9092"
+    FLOWER_REQUIRE_TLS: bool = Field(default=True)
+    FLOWER_MIN_AVAILABLE_CLIENTS: int = Field(default=2, ge=1, le=32)
 
     # Differential Privacy Settings
     DP_EPSILON: float = 1.0

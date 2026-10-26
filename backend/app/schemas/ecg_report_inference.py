@@ -80,6 +80,44 @@ class ECGReportEvaluateResponse(BaseModel):
     )
 
 
+class ECGReportEmbedRequest(BaseModel):
+    """Encoder-only request: same modality contract as evaluate (no persistence)."""
+
+    ecg_leads: List[List[float]] = Field(
+        ...,
+        description="12-lead ECG waveform array of shape (12, 1000) in millivolts (mV).",
+    )
+    report_text: str = Field(
+        ...,
+        description="Clinical observation or ECG machine report narrative text.",
+        min_length=1,
+    )
+
+    @field_validator("ecg_leads")
+    @classmethod
+    def validate_ecg_shape_embed(cls, v: List[List[float]]) -> List[List[float]]:
+        return ECGReportEvaluateRequest.validate_ecg_shape(v)
+
+    @field_validator("report_text")
+    @classmethod
+    def validate_report_embed(cls, v: str) -> str:
+        return ECGReportEvaluateRequest.validate_report(v)
+
+
+class ECGReportEmbedResponse(BaseModel):
+    """128-d encoder outputs for downstream GAT fusion (no raw clinical text)."""
+
+    status: str = Field(default="ENCODED")
+    ecg_embedding: List[float] = Field(..., min_length=128, max_length=128)
+    text_embedding: List[float] = Field(..., min_length=128, max_length=128)
+    architecture_id: str
+    model_version_tag: str
+    privacy_validation_status: str = Field(default="VALIDATED")
+    encoded_at: str = Field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+    )
+
+
 class ECGReportReadinessResponse(BaseModel):
     """Safe readiness diagnostics for ECG + report model."""
 

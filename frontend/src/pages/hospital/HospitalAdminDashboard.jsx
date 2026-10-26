@@ -4,7 +4,7 @@ import { apiRequest, ApiError } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { DiagnosticWorkspace } from '../../components/DiagnosticWorkspace';
 import { ModelStatusPanel } from '../../components/ModelStatusPanel';
-import { FederatedLearningPanel } from '../../components/FederatedLearningPanel';
+import { FederatedDemoShell } from '../../components/FederatedDemoShell';
 import {
   Building2,
   Users,
@@ -54,6 +54,20 @@ export function StatusBadge({ status }) {
     case 'NOT_MEASURED':
       badgeClass = 'badge badge-info';
       label = 'NOT MEASURED';
+      break;
+    case 'CONFIGURATION_REQUIRED':
+    case 'MISSING_DEPENDENCY':
+      badgeClass = 'badge badge-warning';
+      label = 'CONFIG REQUIRED';
+      break;
+    case 'UNAVAILABLE':
+      badgeClass = 'badge badge-danger';
+      label = 'UNAVAILABLE';
+      break;
+    case 'READY':
+    case 'INFRASTRUCTURE_READY':
+      badgeClass = 'badge badge-info';
+      label = 'READY';
       break;
     case 'NOT_IMPLEMENTED':
       badgeClass = 'badge badge-purple';
@@ -471,11 +485,14 @@ export function HospitalAdminDashboard() {
             />
 
             <MetricCard
-              title="Active User Sessions"
+              title="Active Refresh-Token Sessions"
               icon={Users}
-              state="AVAILABLE"
-              value={healthData?.active_sessions_count || 0}
-              subtitle="Authenticated active tokens"
+              state={healthData?.active_sessions?.status || 'NOT_MEASURED'}
+              value={healthData?.active_sessions_count ?? 0}
+              subtitle={
+                healthData?.active_sessions?.definition
+                  || 'Non-revoked sessions with unexpired refresh tokens (global, not hospital-scoped)'
+              }
             />
           </div>
 
@@ -525,13 +542,13 @@ export function HospitalAdminDashboard() {
                   <tr>
                     <td>Worker Process Health</td>
                     <td>Background Celery/Worker</td>
-                    <td><StatusBadge status={healthData?.system_hardware?.worker_health || 'NOT_IMPLEMENTED'} /></td>
+                    <td><StatusBadge status={healthData?.system_hardware?.worker_health || 'NOT_MEASURED'} /></td>
                     <td style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>Not Implemented</td>
                   </tr>
                   <tr>
                     <td>Inference Queue Depth</td>
                     <td>Queue Backlog</td>
-                    <td><StatusBadge status={healthData?.system_hardware?.queue_depth || 'NOT_IMPLEMENTED'} /></td>
+                    <td><StatusBadge status={healthData?.system_hardware?.queue_depth || 'NOT_MEASURED'} /></td>
                     <td style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>Not Implemented</td>
                   </tr>
                 </tbody>
@@ -808,7 +825,7 @@ export function HospitalAdminDashboard() {
       {activeTab === 'federated' && (
         <div>
           {/* Live Federated Learning Telemetry & Orchestration */}
-          <FederatedLearningPanel />
+          <FederatedDemoShell />
 
           <NotEnabledBanner
             title="Flower Federated Aggregation Disabled"

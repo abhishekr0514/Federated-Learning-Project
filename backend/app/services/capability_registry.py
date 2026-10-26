@@ -3,79 +3,182 @@
 from __future__ import annotations
 
 import importlib.util
-from pathlib import Path
+import logging
+import time
+from datetime import datetime, timezone
 from typing import Any, Dict
 
 from backend.app.core.config import settings
+from backend.app.services.capability_cache import get_cached_capability_bundle
+
+logger = logging.getLogger(__name__)
 
 
 def _optional_import(module_name: str) -> bool:
     return importlib.util.find_spec(module_name) is not None
 
 
-def _model_dir() -> Path:
-    root = Path(settings.MODEL_DIR)
-    if not root.is_absolute():
-        repo_root = Path(__file__).resolve().parents[3]
-        root = repo_root / root
-    return root
+def _ecg_report_readiness(*, verify_forward_pass: bool = False) -> dict[str, Any]:
+    from backend.app.services.ecg_report_inference_service import ECGReportInferenceService
+
+    return ECGReportInferenceService.get_readiness(verify_forward_pass=verify_forward_pass)
 
 
-def _fusion_readiness():
-    from ml.inference.fusion_runtime import get_fusion_inference_runtime
+def _gat_fusion_readiness() -> dict[str, Any]:
+    from backend.app.services.gat_fusion_service import GATFusionService
 
-    runtime = get_fusion_inference_runtime(
-        _model_dir(),
-        inference_enabled=settings.INFERENCE_ENABLED,
-        reset=True,
+    return GATFusionService.get_readiness()
+
+
+def _capability_from_readiness(
+    *,
+    enabled_flag: bool,
+    ready: bool,
+    blockers: list[str],
+    disabled_label: str = "NOT_ENABLED",
+) -> str:
+    if not enabled_flag:
+        return disabled_label
+    if not _optional_import("torch"):
+        return "MISSING_DEPENDENCY"
+    if ready:
+        return "AVAILABLE"
+    if blockers:
+        return "CONFIGURATION_REQUIRED"
+    return "UNAVAILABLE"
+
+
+def _detail(summary: str, reason: str, **extra: Any) -> Dict[str, Any]:
+    payload: Dict[str, Any] = {
+        "status": summary,
+        "reason": reason,
+        "evaluated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    payload.update(extra)
+    return payload
+
+
+def _build_capability_details() -> Dict[str, Dict[str, Any]]:
+    t0 = time.perf_counter()
+    ecg = _ecg_report_readiness(verify_forward_pass=False)
+    logger.debug("capability_timing ecg_readiness_ms=%.1f", (time.perf_counter() - t0) * 1000)
+    t1 = time.perf_counter()
+    gat = _gat_fusion_readiness()
+    logger.debug("capability_timing gat_readiness_ms=%.1f", (time.perf_counter() - t1) * 1000)
+    flower = __import__(
+        "backend.app.services.federated_status_service",
+        fromlist=["get_flower_capability_status"],
+    ).get_flower_capability_status()
+    causal = __import__(
+        "backend.app.services.causal_analysis_service",
+        fromlist=["CausalAnalysisService"],
+    ).CausalAnalysisService.get_readiness(build_cohort=False)
+
+    ecg_summary = _capability_from_readiness(
+        enabled_flag=settings.ECG_REPORT_INFERENCE_ENABLED,
+        ready=bool(ecg.get("ready")),
+        blockers=list(ecg.get("blockers") or []),
     )
-    return runtime.assess_readiness()
+    gat_summary = _capability_from_readiness(
+        enabled_flag=settings.FUSION_INFERENCE_ENABLED,
+        ready=bool(gat.get("ready")),
+        blockers=list(gat.get("blockers") or []),
+    )
 
-
-def get_clinician_workspace_capabilities() -> Dict[str, str]:
-    readiness = _fusion_readiness()
-
-    if _optional_import("flwr"):
-        flower = "INFRASTRUCTURE_READY"
-    else:
-        flower = "MISSING_DEPENDENCY"
-
-    dice = "NOT_IMPLEMENTED"
+    dice_summary = "NOT_IMPLEMENTED"
+    dice_reason = "DiCE counterfactual pipeline and API are not implemented (no trained explainer model wired)."
     if not _optional_import("dice_ml"):
-        dice = "MISSING_DEPENDENCY"
-
-    dowhy = "NOT_IMPLEMENTED"
-    if not _optional_import("dowhy"):
-        dowhy = "MISSING_DEPENDENCY"
-
-    if not settings.INFERENCE_ENABLED:
-        inference = "NOT_ENABLED"
-    elif not readiness.dependencies.get("torch") or not readiness.dependencies.get("torch_geometric"):
-        inference = "MISSING_DEPENDENCY"
-    elif readiness.ready:
-        inference = "AVAILABLE"
-    else:
-        inference = "NOT_IMPLEMENTED"
+        dice_summary = "MISSING_DEPENDENCY"
+        dice_reason = "dice_ml package not installed; feature remains not implemented."
 
     return {
-        "clinical_ai_inference": inference,
-        "multimodal_gat_fusion": inference,
+        "ecg_report_inference": _detail(
+            ecg_summary,
+            "; ".join(ecg.get("blockers") or [])
+            or (
+                "ECG + report encoder configured; weights load on first inference."
+                if not ecg.get("runtime_initialized")
+                else "ECG + report encoder ready for inference."
+            ),
+            ready=bool(ecg.get("ready")),
+            enabled=settings.ECG_REPORT_INFERENCE_ENABLED,
+            blockers=ecg.get("blockers") or [],
+            runtime_initialized=bool(ecg.get("runtime_initialized")),
+        ),
+        "multimodal_gat_fusion": _detail(
+            gat_summary,
+            "; ".join(gat.get("blockers") or [])
+            or (
+                "Two-modality GAT fusion configured; weights load on first inference."
+                if not gat.get("model_loaded")
+                else "Two-modality GAT fusion ready."
+            ),
+            ready=bool(gat.get("ready")),
+            enabled=settings.FUSION_INFERENCE_ENABLED,
+            blockers=gat.get("blockers") or [],
+            embedding_contract=gat.get("embedding_contracts"),
+            runtime_initialized=bool(gat.get("model_loaded")),
+        ),
+        "flower_federated": _detail(
+            flower["summary"],
+            flower["reason"],
+            **{k: flower[k] for k in flower if k not in ("summary", "reason")},
+        ),
+        "dice_counterfactuals": _detail(dice_summary, dice_reason),
+        "dowhy_causal": _detail(
+            causal["summary"],
+            causal["reason"],
+            blockers=causal.get("blockers") or [],
+            cohort_id=causal.get("cohort_id"),
+        ),
+        "clinical_decision_support": _detail(
+            "NOT_IMPLEMENTED",
+            "Clinical decision support rules engine is not implemented.",
+        ),
+    }
+
+
+def _summaries_from_details(details: Dict[str, Dict[str, Any]]) -> Dict[str, str]:
+    ecg = details["ecg_report_inference"]["status"]
+    gat = details["multimodal_gat_fusion"]["status"]
+    flower = details["flower_federated"]["status"]
+    dice = details["dice_counterfactuals"]["status"]
+    dowhy = details["dowhy_causal"]["status"]
+    return {
+        "ecg_report_inference": ecg,
+        "clinical_ai_inference": ecg,
+        "multimodal_gat_fusion": gat,
         "dice_counterfactuals": dice,
         "dowhy_causal": dowhy,
         "flower_federated": flower,
         "clinical_decision_support": "NOT_IMPLEMENTED",
         "document_ingestion": "AVAILABLE",
         "privacy_masking_pipeline": "AVAILABLE",
-        "ecg_ml_encoder": "NOT_IMPLEMENTED",
-        "clinical_text_encoder": "NOT_IMPLEMENTED",
+        "ecg_ml_encoder": ecg,
+        "clinical_text_encoder": ecg,
     }
+
+
+def _build_capability_bundle() -> tuple[Dict[str, Dict[str, Any]], Dict[str, str]]:
+    details = _build_capability_details()
+    return details, _summaries_from_details(details)
+
+
+def get_capability_details() -> Dict[str, Dict[str, Any]]:
+    details, _ = get_cached_capability_bundle(_build_capability_bundle)
+    return details
+
+
+def get_clinician_workspace_capabilities() -> Dict[str, str]:
+    _, caps = get_cached_capability_bundle(_build_capability_bundle)
+    return caps
 
 
 def get_patient_portal_capabilities() -> Dict[str, str]:
     clin = get_clinician_workspace_capabilities()
     return {
         "ai_assisted_assessment": "NOT_ENABLED",
-        "ecg_analysis": clin["ecg_ml_encoder"],
+        "ecg_analysis": clin["ecg_report_inference"],
         "explanation_summaries": clin["dice_counterfactuals"],
         "causal_insights": clin["dowhy_causal"],
         "clinical_decision_support": clin["clinical_decision_support"],
@@ -84,19 +187,21 @@ def get_patient_portal_capabilities() -> Dict[str, str]:
 
 
 def get_platform_capability_report() -> Dict[str, Any]:
-    readiness = _fusion_readiness()
-    caps = get_clinician_workspace_capabilities()
+    details, caps = get_cached_capability_bundle(_build_capability_bundle)
+    ecg = details.get("ecg_report_inference") or {}
+    gat = details.get("multimodal_gat_fusion") or {}
     return {
         "capabilities": caps,
+        "capability_details": details,
         "diagnostics": {
-            "inference_api_wired": True,
-            "inference_enabled_flag": settings.INFERENCE_ENABLED,
-            "inference_ready": readiness.ready,
-            "inference_blockers": readiness.blockers,
-            "model_artifacts_in_model_dir": readiness.checkpoint_present,
-            "manifest_present": readiness.manifest_present,
-            "checkpoint_trained": readiness.checkpoint_trained,
-            "model_loaded": readiness.model_loaded,
+            "ecg_report_inference_wired": True,
+            "ecg_report_inference_enabled": settings.ECG_REPORT_INFERENCE_ENABLED,
+            "ecg_report_ready": bool(ecg.get("ready")),
+            "ecg_report_blockers": ecg.get("blockers") or [],
+            "gat_fusion_wired": True,
+            "fusion_inference_enabled_flag": settings.FUSION_INFERENCE_ENABLED,
+            "gat_fusion_ready": bool(gat.get("ready")),
+            "gat_fusion_blockers": gat.get("blockers") or [],
             "flower_server_configured": bool(settings.FLOWER_SERVER_ADDRESS),
             "optional_ml_packages": {
                 "torch": _optional_import("torch"),

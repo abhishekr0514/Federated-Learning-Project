@@ -41,7 +41,10 @@ def test_accounts_match_requirements():
     roles = {a["role"] for a in seed_mod.ACCOUNTS}
     assert "dr_metro@metro.org" in emails
     assert "patient_alice@example.com" in emails
-    assert roles == {"CLINICIAN", "PATIENT"}
+    assert roles == {"CLINICIAN", "PATIENT", "HOSPITAL_ADMIN", "SUPER_ADMIN"}
+    super_admin = next(a for a in seed_mod.ACCOUNTS if a["email"] == "admin@medshield.org")
+    assert super_admin.get("is_super_admin") is True
+    assert super_admin["role"] == "SUPER_ADMIN"
 
 
 def test_dev_hospital_constants_for_clinician_workspace():

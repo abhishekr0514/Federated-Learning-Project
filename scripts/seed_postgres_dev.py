@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 import sys
 import uuid
 from getpass import getpass
@@ -49,6 +50,9 @@ DEV_PATIENT_REF_HASH = "REF_METRO_ALICE_001"
 PATIENT_DEV_EMAIL = "patient_alice@example.com"
 MIN_PASSWORD_LEN = 12
 
+DEV_PASSWORD_ENV = "MEDSHIELD_DEV_SEED_PASSWORD"
+DEFAULT_NONINTERACTIVE_PASSWORD = "ValidPassword123!"
+
 ACCOUNTS = [
     {
         "email": "dr_metro@metro.org",
@@ -60,7 +64,30 @@ ACCOUNTS = [
         "full_name": "Alice Smith",
         "role": "PATIENT",
     },
+    {
+        "email": "admin_a@metro.org",
+        "full_name": "Metro Hospital Admin",
+        "role": "HOSPITAL_ADMIN",
+        "hospital_admin_membership": True,
+    },
+    {
+        "email": "admin@medshield.org",
+        "full_name": "MedShield Super Admin",
+        "role": "SUPER_ADMIN",
+        "is_super_admin": True,
+    },
 ]
+
+
+def _resolve_seed_password(*, non_interactive: bool, email: str) -> str:
+    if non_interactive:
+        password = os.environ.get(DEV_PASSWORD_ENV, DEFAULT_NONINTERACTIVE_PASSWORD)
+        if len(password) < MIN_PASSWORD_LEN:
+            raise SystemExit(
+                f"{DEV_PASSWORD_ENV} must be at least {MIN_PASSWORD_LEN} characters for non-interactive seeding."
+            )
+        return password
+    return _prompt_new_password(email)
 
 
 def _prompt_new_password(email: str) -> str:
@@ -273,7 +300,35 @@ async def _ensure_dev_clinical_metadata(
         print("Reused dev observation metadata for Alice")
 
 
-async def seed(*, with_dev_clinical_metadata: bool = False) -> None:
+async def _ensure_hospital_admin_membership(session, user: User, hospital: Hospital) -> None:
+    membership_result = await session.execute(
+        select(HospitalMembership).where(
+            HospitalMembership.user_id == user.id,
+            HospitalMembership.hospital_id == hospital.id,
+        )
+    )
+    membership = membership_result.scalar_one_or_none()
+    if membership is None:
+        session.add(
+            HospitalMembership(
+                id=uuid.uuid4(),
+                user_id=user.id,
+                hospital_id=hospital.id,
+                role_in_hospital="HOSPITAL_ADMIN",
+            )
+        )
+        print(f"Created HOSPITAL_ADMIN membership for {user.email}")
+    elif membership.role_in_hospital != "HOSPITAL_ADMIN":
+        membership.role_in_hospital = "HOSPITAL_ADMIN"
+        print(f"Updated hospital membership role for {user.email}")
+
+
+async def seed(
+    *,
+    with_dev_clinical_metadata: bool = False,
+    non_interactive: bool = False,
+    sync_demo_passwords: bool = False,
+) -> None:
     assert_postgres_configuration(expected_database=EXPECTED_DATABASE)
     target = database_target_summary()
     print(
@@ -318,14 +373,16 @@ async def seed(*, with_dev_clinical_metadata: bool = False) -> None:
                     user = user_result.scalar_one_or_none()
 
                     if user is None:
-                        password = _prompt_new_password(account["email"])
+                        password = _resolve_seed_password(
+                            non_interactive=non_interactive, email=account["email"]
+                        )
                         user = User(
                             id=uuid.uuid4(),
                             email=account["email"],
                             full_name=account["full_name"],
                             hashed_password=hash_password(password),
                             is_active=True,
-                            is_super_admin=False,
+                            is_super_admin=bool(account.get("is_super_admin")),
                         )
                         user.roles.append(role)
                         session.add(user)
@@ -338,8 +395,39 @@ async def seed(*, with_dev_clinical_metadata: bool = False) -> None:
                         else:
                             print(f"Reused existing account: {account['email']}")
 
+                        expected_super = bool(account.get("is_super_admin"))
+                        if user.is_super_admin != expected_super:
+                            user.is_super_admin = expected_super
+                            print(
+                                f"Set is_super_admin={expected_super} for {account['email']} "
+                                "(required for federated:monitor bypass and SuperLink demo UI)"
+                            )
+
+                        if sync_demo_passwords and non_interactive:
+                            password = _resolve_seed_password(
+                                non_interactive=True, email=account["email"]
+                            )
+                            user.hashed_password = hash_password(password)
+                            print(f"Synced demo password for: {account['email']}")
+
                     if account["role"] == "CLINICIAN":
                         await _ensure_clinician_workspace(session, user)
+
+                    if account.get("hospital_admin_membership"):
+                        hospital_result = await session.execute(
+                            select(Hospital).where(Hospital.code == DEV_HOSPITAL_CODE)
+                        )
+                        hospital = hospital_result.scalar_one_or_none()
+                        if hospital is None:
+                            hospital = Hospital(
+                                id=uuid.uuid4(),
+                                code=DEV_HOSPITAL_CODE,
+                                name=DEV_HOSPITAL_NAME,
+                                is_active=True,
+                            )
+                            session.add(hospital)
+                            await session.flush()
+                        await _ensure_hospital_admin_membership(session, user, hospital)
 
                 hospital_result = await session.execute(
                     select(Hospital).where(Hospital.code == DEV_HOSPITAL_CODE)
@@ -378,5 +466,29 @@ if __name__ == "__main__":
         action="store_true",
         help="Insert idempotent metadata-only clinical rows (local URIs, no AI predictions).",
     )
+    parser.add_argument(
+        "--non-interactive",
+        action="store_true",
+        help=(
+            "Use MEDSHIELD_DEV_SEED_PASSWORD or built-in dev default for new accounts "
+            "(does not overwrite existing password hashes unless --sync-demo-passwords)."
+        ),
+    )
+    parser.add_argument(
+        "--sync-demo-passwords",
+        action="store_true",
+        help=(
+            "With --non-interactive, reset passwords for seeded demo accounts to match login quick-access "
+            "(ValidPassword123! or MEDSHIELD_DEV_SEED_PASSWORD). Development only."
+        ),
+    )
     args = parser.parse_args()
-    asyncio.run(seed(with_dev_clinical_metadata=args.with_dev_clinical_metadata))
+    if args.sync_demo_passwords and not args.non_interactive:
+        raise SystemExit("--sync-demo-passwords requires --non-interactive.")
+    asyncio.run(
+        seed(
+            with_dev_clinical_metadata=args.with_dev_clinical_metadata,
+            non_interactive=args.non_interactive,
+            sync_demo_passwords=args.sync_demo_passwords,
+        )
+    )

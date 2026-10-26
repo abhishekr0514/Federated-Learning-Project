@@ -109,6 +109,7 @@ class SyntheticInfrastructureAdapter(TaskClientAdapter):
         # Infrastructure-only: optional noise proportional to local_epochs (no real data).
         epochs = int(config.get("local_epochs", 0))
         if epochs > 0:
-            self._w += np.float32(1e-4)
+            self._w += np.float32(1e-2) * epochs
+            self._b += np.float32(1e-3) * epochs
         arrays, names = self.get_parameters()
         return arrays, self._num_examples, {"loss": float(config.get("loss", 0.5))}

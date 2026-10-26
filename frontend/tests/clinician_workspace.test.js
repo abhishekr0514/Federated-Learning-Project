@@ -10,6 +10,7 @@
  */
 
 import assert from 'node:assert';
+import { capabilityNavBadge, isGatDiagnosticWorkflowEnabled } from '../src/utils/capabilityNav.js';
 
 console.log('--- Running Clinician Workspace Specification & Invariant Tests ---');
 
@@ -181,5 +182,29 @@ for (const key of forbiddenDossierKeys) {
   );
 }
 console.log('✓ Privacy boundary contract verified: zero PII and zero raw signal arrays in dossier.');
+
+// 6. Sidebar badges must not use HTTP 501 as capability labels
+assert.strictEqual(capabilityNavBadge('501'), '501', 'Raw numeric HTTP codes are not mapped to fake READY');
+assert.strictEqual(capabilityNavBadge('AVAILABLE'), 'READY');
+assert.strictEqual(capabilityNavBadge('NOT_IMPLEMENTED'), 'N/A');
+assert.strictEqual(capabilityNavBadge('CAUSAL_DESIGN_REQUIRED'), 'DESIGN');
+console.log('✓ Capability nav badges use backend states, not HTTP codes.');
+
+assert.strictEqual(
+  isGatDiagnosticWorkflowEnabled(
+    { multimodal_gat_fusion: 'CONFIGURATION_REQUIRED', ecg_report_inference: 'AVAILABLE' },
+    { ecg_report_inference: { ready: true } },
+  ),
+  true,
+  'GAT workflow opens when encoder is operational even if fusion status is not AVAILABLE',
+);
+assert.strictEqual(
+  isGatDiagnosticWorkflowEnabled(
+    { multimodal_gat_fusion: 'NOT_ENABLED', ecg_report_inference: 'NOT_ENABLED' },
+    {},
+  ),
+  false,
+);
+console.log('✓ GAT workflow gate follows canonical capability readiness.');
 
 console.log('All Clinician Workspace specification and invariant tests PASSED successfully!');

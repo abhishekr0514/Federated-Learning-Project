@@ -92,13 +92,18 @@ class FusionInferenceRuntime:
                 checkpoint_present = ckpt.is_file()
                 if not checkpoint_present:
                     artifact_blockers.append("Manifest checkpoint file missing")
-                elif deps["torch_geometric"]:
-                    from ml.models.gat_ecg_report_fusion import checkpoint_summary
+                elif deps["torch_geometric"] and self._model is None:
+                    if manifest.checkpoint_trained is not None:
+                        checkpoint_trained = manifest.checkpoint_trained
+                    else:
+                        from ml.models.gat_ecg_report_fusion import checkpoint_summary
 
-                    summary = checkpoint_summary(ckpt)
-                    checkpoint_trained = bool(summary.get("trained", False))
+                        summary = checkpoint_summary(ckpt)
+                        checkpoint_trained = bool(summary.get("trained", False))
                     if manifest.require_trained_checkpoint and not checkpoint_trained:
                         artifact_blockers.append("Checkpoint not marked trained")
+                elif self._model is not None:
+                    checkpoint_trained = True
             except Exception as exc:
                 artifact_blockers.append(f"Manifest invalid: {type(exc).__name__}")
 

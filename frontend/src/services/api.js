@@ -1,3 +1,5 @@
+import { parseAuthTokenEnvelope } from '../utils/integrationStatus.js';
+
 /**
  * Centralized API Client for MedShield-FL Frontend
  * Handles HTTP requests, Bearer token attachment, X-Request-ID propagation,
@@ -107,8 +109,7 @@ export async function apiRequest(endpoint, options = {}) {
         }
 
         const refreshData = await refreshResponse.json();
-        const newAccess = refreshData.data?.access_token || refreshData.access_token;
-        const newRefresh = refreshData.data?.refresh_token || refreshData.refresh_token;
+        const { access_token: newAccess, refresh_token: newRefresh } = parseAuthTokenEnvelope(refreshData);
 
         if (typeof sessionStorage !== 'undefined') {
           sessionStorage.setItem('medshield_access_token', newAccess);
@@ -188,7 +189,22 @@ export class ApiError extends Error {
 
 /** Health and Readiness */
 export const apiGetHealth = () => apiRequest('/health');
-export const apiGetEcgReportReadiness = () => apiRequest('/api/v1/ecg-report/readiness');
+export const apiGetPlatformCapabilities = () => apiRequest('/api/v1/capabilities', { timeout: 30000 });
+export const apiGetEcgReportReadiness = ({ verify = false } = {}) => {
+  const q = verify ? '?verify_forward_pass=true' : '';
+  return apiRequest(`/api/v1/ecg-report/readiness${q}`);
+};
+
+/** Encoder embeddings for GAT (server-side privacy mask; no raw text in response). */
+export const apiEncodeEcgReportEmbeddings = (payload) =>
+  apiRequest('/api/v1/ecg-report/embed', {
+    method: 'POST',
+    body: JSON.stringify({
+      ecg_leads: payload.ecg_leads,
+      report_text: payload.report_text,
+    }),
+    timeout: 120000,
+  });
 export const apiGetGatFusionReadiness = () => apiRequest('/api/v1/gat-fusion/readiness');
 
 /** Privacy Masking Validation */
@@ -208,11 +224,21 @@ export const apiEvaluateEcgReport = (payload, patientId = null) => {
   });
 };
 
+export const apiGetCausalReadiness = () => apiRequest('/api/v1/causal/readiness');
+export const apiListCausalCohorts = () => apiRequest('/api/v1/causal/cohorts');
+export const apiRunCausalAnalysis = (payload) =>
+  apiRequest('/api/v1/causal/analyze', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+    timeout: 180000,
+  });
+
 export const apiEvaluateGatFusion = (payload, patientId = null) => {
   const query = patientId ? `?patient_id=${encodeURIComponent(patientId)}` : '';
   return apiRequest(`/api/v1/gat-fusion/evaluate${query}`, {
     method: 'POST',
     body: JSON.stringify(payload),
+    timeout: 120000,
   });
 };
 
@@ -222,8 +248,17 @@ export const apiGetLatestTabularExperiment = (runId = null) => {
   return apiRequest(`/api/v1/federated/experiments/tabular/latest${query}`);
 };
 
-export const apiStartFlCampaign = () =>
-  apiRequest('/api/v1/federated/start', { method: 'POST' });
+export const apiGetFlOrchestrationStatus = () =>
+  apiRequest('/api/v1/federated/status');
+
+export const apiStartFlCampaign = (numRounds = null) =>
+  apiRequest('/api/v1/federated/start', {
+    method: 'POST',
+    body: JSON.stringify(numRounds != null ? { num_rounds: numRounds } : {}),
+  });
+
+export const apiStopFlCampaign = () =>
+  apiRequest('/api/v1/federated/stop', { method: 'POST' });
 
 export const apiGetFlRounds = () =>
   apiRequest('/api/v1/federated/rounds');

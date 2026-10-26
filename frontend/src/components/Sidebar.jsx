@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   LayoutDashboard,
   Building2,
@@ -16,12 +16,45 @@ import {
   Radio,
   FileSpreadsheet,
   Bell,
-  AlertTriangle,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { capabilityNavBadge } from '../utils/capabilityNav';
+import { fetchPlatformCapabilities } from '../services/capabilityClient';
 
 export function Sidebar({ isOpen, activeTab, onSelectTab, role }) {
   const { user, permissions } = useAuth();
+  const [capabilityBadges, setCapabilityBadges] = useState(null);
+
+  const refreshCapabilityBadges = React.useCallback(async () => {
+    try {
+      const report = await fetchPlatformCapabilities({ force: true });
+      const caps = report?.capabilities || report;
+      setCapabilityBadges({
+        gat: capabilityNavBadge(caps?.multimodal_gat_fusion),
+        dice: capabilityNavBadge(caps?.dice_counterfactuals),
+        dowhy: capabilityNavBadge(caps?.dowhy_causal),
+        flower: capabilityNavBadge(caps?.flower_federated),
+      });
+    } catch {
+      setCapabilityBadges({
+        gat: 'ERR',
+        dice: 'ERR',
+        dowhy: 'ERR',
+        flower: 'ERR',
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    const rolesWithCaps = ['CLINICIAN', 'SUPER_ADMIN', 'HOSPITAL_ADMIN'];
+    if (!rolesWithCaps.includes(role)) {
+      return undefined;
+    }
+    refreshCapabilityBadges();
+    const onFederate = () => refreshCapabilityBadges();
+    window.addEventListener('medshield:federate_changed', onFederate);
+    return () => window.removeEventListener('medshield:federate_changed', onFederate);
+  }, [role, refreshCapabilityBadges]);
 
   const renderNavGroup = (title, items) => (
     <div className="nav-group" key={title}>
@@ -53,7 +86,7 @@ export function Sidebar({ isOpen, activeTab, onSelectTab, role }) {
         items: [
           { id: 'overview', label: 'System Overview', icon: LayoutDashboard },
           { id: 'hospitals', label: 'Hospital Nodes', icon: Building2 },
-          { id: 'federated', label: 'Federated Engine', icon: Cpu, badge: 'Flower' },
+          { id: 'federated', label: 'Federated Engine', icon: Cpu, badge: capabilityBadges?.flower || 'Flower' },
           { id: 'models', label: 'Model Artifacts', icon: Activity },
           { id: 'metrics', label: 'Global Metrics', icon: BarChart3 },
         ],
@@ -83,7 +116,7 @@ export function Sidebar({ isOpen, activeTab, onSelectTab, role }) {
           { id: 'inference', label: 'Diagnostic Studio', icon: Activity, badge: 'Live ML' },
           { id: 'models', label: 'Model Artifacts', icon: Cpu },
           { id: 'metrics', label: 'Local Metrics', icon: BarChart3 },
-          { id: 'federated', label: 'Federated Node', icon: Radio, badge: 'Disabled' },
+          { id: 'federated', label: 'Federated Node', icon: Radio, badge: capabilityBadges?.flower || '…' },
         ],
       },
       {
@@ -97,6 +130,7 @@ export function Sidebar({ isOpen, activeTab, onSelectTab, role }) {
       },
     ];
   } else if (role === 'CLINICIAN') {
+    const cb = capabilityBadges;
     navConfig = [
       {
         group: 'Clinical Workspace',
@@ -110,10 +144,10 @@ export function Sidebar({ isOpen, activeTab, onSelectTab, role }) {
       {
         group: 'Diagnostic Intelligence',
         items: [
-          { id: 'federated', label: 'Federated Node', icon: Radio, badge: 'Flower' },
-          { id: 'diagnosis', label: 'GAT Diagnosis', icon: Activity, badge: '501' },
-          { id: 'explanations', label: 'DiCE Explanations', icon: Cpu, badge: '501' },
-          { id: 'causal', label: 'DoWhy Causal AI', icon: BarChart3, badge: '501' },
+          { id: 'federated', label: 'Federated Node', icon: Radio, badge: cb?.flower || '…' },
+          { id: 'diagnosis', label: 'GAT Diagnosis', icon: Activity, badge: cb?.gat || '…' },
+          { id: 'explanations', label: 'DiCE Explanations', icon: Cpu, badge: cb?.dice || '…' },
+          { id: 'causal', label: 'DoWhy Causal AI', icon: BarChart3, badge: cb?.dowhy || '…' },
         ],
       },
     ];

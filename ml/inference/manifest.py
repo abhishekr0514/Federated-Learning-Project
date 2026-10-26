@@ -23,6 +23,7 @@ class FusionManifest:
     target_definition: str
     prediction_type: str
     require_trained_checkpoint: bool
+    checkpoint_trained: bool | None = None
 
     def resolve_checkpoint(self, model_dir: Path) -> Path:
         ckpt = (model_dir / self.checkpoint_relative_path).resolve()
@@ -48,4 +49,7 @@ def load_fusion_manifest(model_dir: Path) -> FusionManifest:
         target_definition=str(data["target_definition"]),
         prediction_type=str(data.get("prediction_type", "proxy_evaluation")),
         require_trained_checkpoint=bool(data.get("require_trained_checkpoint", True)),
+        checkpoint_trained=(
+            bool(data["checkpoint_trained"]) if "checkpoint_trained" in data else None
+        ),
     )

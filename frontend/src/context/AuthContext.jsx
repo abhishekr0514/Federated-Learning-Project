@@ -1,5 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { apiRequest, ApiError } from '../services/api';
+import { invalidatePlatformCapabilitiesCache } from '../services/capabilityClient';
+import { parseAuthTokenEnvelope } from '../utils/integrationStatus';
 
 const AuthContext = createContext(null);
 
@@ -92,16 +94,22 @@ export function AuthProvider({ children }) {
   const login = async (email, password) => {
     setLoading(true);
     setError(null);
+    sessionStorage.removeItem('medshield_access_token');
+    sessionStorage.removeItem('medshield_refresh_token');
+    setUser(null);
+    setRoles([]);
+    setPermissions([]);
     try {
       const res = await apiRequest('/api/v1/auth/login', {
         method: 'POST',
         body: JSON.stringify({ email, password }),
       });
 
-      const { access_token, refresh_token } = res.data;
+      const { access_token, refresh_token } = parseAuthTokenEnvelope(res);
       sessionStorage.setItem('medshield_access_token', access_token);
       sessionStorage.setItem('medshield_refresh_token', refresh_token);
 
+      invalidatePlatformCapabilitiesCache();
       await fetchCurrentUser();
       return res;
     } catch (err) {
@@ -129,6 +137,7 @@ export function AuthProvider({ children }) {
 
     sessionStorage.removeItem('medshield_access_token');
     sessionStorage.removeItem('medshield_refresh_token');
+    invalidatePlatformCapabilitiesCache();
     setUser(null);
     setRoles([]);
     setPermissions([]);

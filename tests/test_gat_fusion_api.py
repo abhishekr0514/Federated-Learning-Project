@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -120,8 +121,31 @@ class TestGATFusionServiceReadiness:
         assert "pairing_gate_verdict" in result
         assert "pairing_gate_allowed" in result
 
-    def test_readiness_shows_artifacts_when_deployed(self):
+    def test_readiness_shows_artifacts_when_deployed(self, tmp_path, monkeypatch):
+        """Uses an isolated MODEL_DIR with manifest + checkpoint (deploy dir may omit checkpoint)."""
+        import shutil
+
+        from backend.app.core.config import settings
         from backend.app.services.gat_fusion_service import GATFusionService
+
+        repo = Path(__file__).resolve().parents[1]
+        deploy_manifest = repo / "models" / "gat_ecg_report" / "medshield_fusion_manifest.json"
+        checkpoint_src = repo / "data" / "processed" / "gat_ecg_report" / "runs" / "20261025T182109Z" / "best_gat_checkpoint.pt"
+        if not deploy_manifest.is_file() or not checkpoint_src.is_file():
+            pytest.skip("GAT manifest or trained checkpoint artifact not present in workspace")
+
+        model_dir = tmp_path / "gat_model_dir"
+        model_dir.mkdir()
+        shutil.copy2(deploy_manifest, model_dir / "medshield_fusion_manifest.json")
+        shutil.copy2(checkpoint_src, model_dir / "best_gat_checkpoint.pt")
+
+        monkeypatch.setattr(settings, "FUSION_MODEL_DIR", str(model_dir))
+        monkeypatch.setattr(settings, "FUSION_INFERENCE_ENABLED", True)
+
+        from ml.inference import fusion_runtime
+
+        fusion_runtime._RUNTIME = None
+        fusion_runtime.get_fusion_inference_runtime(model_dir, inference_enabled=True, reset=True)
 
         result = GATFusionService.get_readiness()
         assert result["manifest_present"] is True

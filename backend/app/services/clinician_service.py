@@ -13,7 +13,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from backend.app.core.errors import ConflictError, ForbiddenError, NotFoundError
-from backend.app.services.capability_registry import get_clinician_workspace_capabilities
+from backend.app.services.capability_registry import (
+    get_clinician_workspace_capabilities,
+    get_platform_capability_report,
+)
 from backend.app.models.identity import ClinicianProfile, Hospital, User
 from backend.app.models.patient import Patient, PatientClinicianAssignment, PatientHospitalAssociation
 from backend.app.models.clinical import (
@@ -111,7 +114,8 @@ class ClinicianService:
                     "message": None if ecg_count > 0 else "No ECG records acquired for assigned patients",
                 },
             },
-            "capabilities": get_clinician_workspace_capabilities(),
+            "capabilities": (cap_report := get_platform_capability_report())["capabilities"],
+            "capability_details": cap_report["capability_details"],
         }
 
     @staticmethod
@@ -424,7 +428,13 @@ class ClinicianService:
                 "message": (
                     None
                     if prediction_data
-                    else "Prediction unavailable — clinical inference is not implemented."
+                    else (
+                        "No stored diagnosis prediction for this patient. "
+                        "Run Diagnostic Studio inference to generate a persisted result."
+                        if get_clinician_workspace_capabilities().get("clinical_ai_inference")
+                        == "AVAILABLE"
+                        else "Clinical inference is not ready — see capability status for blockers."
+                    )
                 ),
             },
             "ai_capabilities": {

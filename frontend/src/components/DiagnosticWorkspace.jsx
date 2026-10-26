@@ -22,12 +22,20 @@ import {
 import { EcgWaveformCanvas } from './EcgWaveformCanvas';
 import {
   apiEvaluateEcgReport,
+  apiEncodeEcgReportEmbeddings,
+  apiEvaluateGatFusion,
   apiValidatePrivacyMasking,
   apiGetEcgReportReadiness,
   apiGetGatFusionReadiness,
   generateUUID,
   ApiError,
 } from '../services/api';
+import {
+  buildGatFusionPayload,
+  resolvePredictionScore,
+  selectWorkflowPredictionResult,
+  validateEncoderEmbedResponse,
+} from '../utils/diagnosticGatWorkflow';
 import {
   SAMPLE_ECG_NORMAL,
   SAMPLE_ECG_PATHOLOGICAL,
@@ -72,6 +80,8 @@ export function DiagnosticWorkspace({ assignedPatients = [], onPredictionComplet
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [submitError, setSubmitError] = useState(null);
   const [predictionResult, setPredictionResult] = useState(null);
+  const [gatPredictionResult, setGatPredictionResult] = useState(null);
+  const [inferencePhase, setInferencePhase] = useState(null);
 
   // Fetch live readiness for both workflows
   const checkReadiness = useCallback(async () => {
@@ -99,6 +109,10 @@ export function DiagnosticWorkspace({ assignedPatients = [], onPredictionComplet
   useEffect(() => {
     checkReadiness();
   }, [checkReadiness]);
+
+  useEffect(() => {
+    setSubmitError(null);
+  }, [workflow]);
 
   // Elapsed timer while submitting
   useEffect(() => {
@@ -261,8 +275,7 @@ export function DiagnosticWorkspace({ assignedPatients = [], onPredictionComplet
     setSubmitError(null);
   };
 
-  // Submit model evaluation
-  const handleSubmitPrediction = async () => {
+  const handleSubmitEcgReportPrediction = async () => {
     if (!ecgValidationStatus.valid || !ecgLeads) {
       setSubmitError('Please supply a valid 12-lead ECG waveform array before submission.');
       return;
@@ -273,8 +286,10 @@ export function DiagnosticWorkspace({ assignedPatients = [], onPredictionComplet
     }
 
     setIsSubmitting(true);
+    setInferencePhase('ecg_report_fusion');
     setSubmitError(null);
     setPredictionResult(null);
+    setGatPredictionResult(null);
 
     try {
       const payload = {
@@ -292,11 +307,75 @@ export function DiagnosticWorkspace({ assignedPatients = [], onPredictionComplet
         onPredictionComplete(result);
       }
     } catch (err) {
-      console.error('Evaluation request failed:', err);
-      setSubmitError(err.message || 'Model prediction evaluation failed.');
+      setSubmitError(err.message || 'ECG + report model evaluation failed.');
     } finally {
       setIsSubmitting(false);
+      setInferencePhase(null);
     }
+  };
+
+  const handleSubmitGatFusionPrediction = async () => {
+    if (!gatReady) {
+      setSubmitError('GAT fusion is not ready on the server. Check readiness blockers and try again.');
+      return;
+    }
+    if (!ecgReady) {
+      setSubmitError('ECG-report encoder is not ready. GAT fusion requires the authorized encoder stack.');
+      return;
+    }
+    if (!ecgValidationStatus.valid || !ecgLeads) {
+      setSubmitError('Please supply a valid 12-lead ECG waveform array before GAT submission.');
+      return;
+    }
+    if (!reportText || !reportText.trim()) {
+      setSubmitError('Please supply a clinical report narrative text before GAT submission.');
+      return;
+    }
+    if (privacyState === 'BLOCKED') {
+      setSubmitError('Clinical text failed privacy validation. Resolve blocking issues before inference.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    setInferencePhase('encoder');
+    setSubmitError(null);
+    setPredictionResult(null);
+    setGatPredictionResult(null);
+
+    try {
+      const embedBody = await apiEncodeEcgReportEmbeddings({
+        ecg_leads: ecgLeads,
+        report_text: reportText.trim(),
+      });
+      const embedCheck = validateEncoderEmbedResponse(embedBody);
+      if (!embedCheck.ok) {
+        throw new Error(embedCheck.error);
+      }
+      setPrivacyState('VALIDATED');
+      setInferencePhase('gat_fusion');
+
+      const gatPayload = buildGatFusionPayload(embedBody, idempotencyKey);
+      const gatResult = await apiEvaluateGatFusion(gatPayload, selectedPatientId || null);
+      setGatPredictionResult(gatResult);
+
+      if (onPredictionComplete) {
+        onPredictionComplete(gatResult);
+      }
+    } catch (err) {
+      setGatPredictionResult(null);
+      setSubmitError(err.message || 'GAT fusion evaluation failed.');
+    } finally {
+      setIsSubmitting(false);
+      setInferencePhase(null);
+    }
+  };
+
+  const handleRunInference = () => {
+    if (workflow === 'gat_fusion') {
+      handleSubmitGatFusionPrediction();
+      return;
+    }
+    handleSubmitEcgReportPrediction();
   };
 
   // Safe form reset
@@ -311,6 +390,7 @@ export function DiagnosticWorkspace({ assignedPatients = [], onPredictionComplet
     setIdempotencyKey(generateUUID());
     setSubmitError(null);
     setPredictionResult(null);
+    setGatPredictionResult(null);
   };
 
   const isFormSubmittable =
@@ -318,7 +398,27 @@ export function DiagnosticWorkspace({ assignedPatients = [], onPredictionComplet
     Boolean(ecgLeads) &&
     Boolean(reportText && reportText.trim()) &&
     privacyState !== 'BLOCKED' &&
-    !isSubmitting;
+    !isSubmitting &&
+    (workflow === 'ecg_report' ? ecgReady : gatReady && ecgReady);
+
+  const activePredictionResult = selectWorkflowPredictionResult(
+    workflow,
+    predictionResult,
+    gatPredictionResult,
+  );
+  const activeScore = resolvePredictionScore(activePredictionResult);
+
+  const inferenceButtonLabel =
+    workflow === 'gat_fusion'
+      ? 'Run GAT Fusion Inference'
+      : 'Run ECG + Report Inference';
+
+  const inferenceLoadingLabel =
+    inferencePhase === 'encoder'
+      ? `Encoding modalities (${elapsedSeconds}s)...`
+      : inferencePhase === 'gat_fusion'
+        ? `Running GAT fusion (${elapsedSeconds}s)...`
+        : `Running ECG + report model (${elapsedSeconds}s)...`;
 
   return (
     <div className="diagnostic-workspace">
@@ -342,7 +442,10 @@ export function DiagnosticWorkspace({ assignedPatients = [], onPredictionComplet
             <button
               type="button"
               className={`btn btn-sm ${workflow === 'ecg_report' ? 'btn-primary' : 'btn-secondary'}`}
-              onClick={() => setWorkflow('ecg_report')}
+              onClick={() => {
+                setWorkflow('ecg_report');
+                setGatPredictionResult(null);
+              }}
               style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
             >
               <Activity size={14} />
@@ -355,21 +458,27 @@ export function DiagnosticWorkspace({ assignedPatients = [], onPredictionComplet
             <button
               type="button"
               className={`btn btn-sm ${workflow === 'gat_fusion' ? 'btn-primary' : 'btn-secondary'}`}
-              onClick={() => setWorkflow('gat_fusion')}
+              onClick={() => {
+                setWorkflow('gat_fusion');
+                setPredictionResult(null);
+              }}
               style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
             >
               <Layers size={14} />
               <span>GAT Multimodal Fusion</span>
-              <span className="badge badge-danger" style={{ fontSize: '0.65rem', padding: '1px 5px' }}>
-                Unavailable
+              <span
+                className={`badge ${gatReady ? 'badge-success' : checkingReadiness ? 'badge-warning' : 'badge-danger'}`}
+                style={{ fontSize: '0.65rem', padding: '1px 5px' }}
+              >
+                {checkingReadiness ? 'Checking' : gatReady ? 'Ready' : 'Unavailable'}
               </span>
             </button>
           </div>
         </div>
       </div>
 
-      {/* When GAT Workflow is selected, display honest server state */}
-      {workflow === 'gat_fusion' && (
+      {/* When GAT Workflow is selected but server is not ready, display honest blockers */}
+      {workflow === 'gat_fusion' && !gatReady && !checkingReadiness && (
         <div className="notice-banner" style={{ borderLeftColor: 'var(--warning)', marginBottom: '1.5rem', background: '#1c1917' }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
             <AlertCircle size={20} className="text-warning" style={{ marginTop: '2px', flexShrink: 0 }} />
@@ -396,6 +505,23 @@ export function DiagnosticWorkspace({ assignedPatients = [], onPredictionComplet
               </div>
               <p style={{ margin: '8px 0 0', fontSize: '0.75rem', color: '#a8a29e' }}>
                 Switch back to the operational <strong>Two-Modality ECG + Report</strong> workflow above to execute live predictions.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {workflow === 'gat_fusion' && gatReady && !checkingReadiness && (
+        <div className="notice-banner" style={{ borderLeftColor: 'var(--accent)', marginBottom: '1.5rem', background: '#0c1222' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
+            <Info size={20} className="text-accent" style={{ marginTop: '2px', flexShrink: 0 }} />
+            <div>
+              <strong style={{ fontSize: '0.9375rem', color: '#e0f2fe' }}>
+                GAT fusion workflow (128-d + 128-d encoder contract)
+              </strong>
+              <p style={{ margin: '4px 0 0', fontSize: '0.8125rem', color: '#cbd5e1' }}>
+                Run inference encodes your ECG and privacy-masked clinical text with the authorized ECG-report encoder on the server,
+                then evaluates the deployed Graph Attention Network checkpoint. This is separate from the end-to-end ECG + report fusion head.
               </p>
             </div>
           </div>
@@ -789,7 +915,7 @@ export function DiagnosticWorkspace({ assignedPatients = [], onPredictionComplet
             <button
               type="button"
               className="btn btn-primary"
-              onClick={handleSubmitPrediction}
+              onClick={handleRunInference}
               disabled={!isFormSubmittable}
               style={{
                 minWidth: '200px',
@@ -800,12 +926,12 @@ export function DiagnosticWorkspace({ assignedPatients = [], onPredictionComplet
               {isSubmitting ? (
                 <>
                   <Activity size={16} className="spin" style={{ marginRight: '6px' }} />
-                  Running Neural Pass ({elapsedSeconds}s)...
+                  {inferenceLoadingLabel}
                 </>
               ) : (
                 <>
                   <Play size={16} style={{ marginRight: '6px' }} />
-                  Run Model Inference
+                  {inferenceButtonLabel}
                 </>
               )}
             </button>
@@ -822,9 +948,9 @@ export function DiagnosticWorkspace({ assignedPatients = [], onPredictionComplet
       )}
 
       {/* REAL PREDICTION RESULT CARD */}
-      {predictionResult && (
+      {activePredictionResult && (
         <div className="card prediction-result-card" style={{
-          border: predictionResult.predicted_class_index === 1
+          border: activePredictionResult.predicted_class_index === 1
             ? '1px solid rgba(245, 158, 11, 0.5)'
             : '1px solid rgba(16, 185, 129, 0.5)',
           background: '#090d16',
@@ -840,29 +966,31 @@ export function DiagnosticWorkspace({ assignedPatients = [], onPredictionComplet
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
               <div className="card-icon" style={{
-                background: predictionResult.predicted_class_index === 1
+                background: activePredictionResult.predicted_class_index === 1
                   ? 'rgba(245, 158, 11, 0.15)'
                   : 'rgba(16, 185, 129, 0.15)',
-                color: predictionResult.predicted_class_index === 1 ? '#f59e0b' : '#10b981'
+                color: activePredictionResult.predicted_class_index === 1 ? '#f59e0b' : '#10b981'
               }}>
-                <Activity size={22} />
+                {workflow === 'gat_fusion' ? <Layers size={22} /> : <Activity size={22} />}
               </div>
               <div>
                 <h3 style={{ fontSize: '1.125rem', fontWeight: 700, color: '#f8fafc', margin: 0 }}>
-                  Model Prediction Evaluation (Genuine Inference Output)
+                  {workflow === 'gat_fusion'
+                    ? 'GAT Fusion Prediction (Encoder + Graph Attention Network)'
+                    : 'ECG + Report Fusion Prediction (Genuine Inference Output)'}
                 </h3>
                 <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
-                  Execution ID: {predictionResult.prediction_id}
+                  Execution ID: {activePredictionResult.prediction_id}
                 </span>
               </div>
             </div>
 
-            <span className={`badge ${predictionResult.predicted_class_index === 1 ? 'badge-warning' : 'badge-success'}`} style={{
+            <span className={`badge ${activePredictionResult.predicted_class_index === 1 ? 'badge-warning' : 'badge-success'}`} style={{
               fontSize: '0.875rem',
               fontWeight: 700,
               padding: '0.35rem 0.85rem'
             }}>
-              Proxy Target: {predictionResult.predicted_class_label}
+              Proxy Target: {activePredictionResult.predicted_class_label}
             </span>
           </div>
 
@@ -877,25 +1005,25 @@ export function DiagnosticWorkspace({ assignedPatients = [], onPredictionComplet
                   fontSize: '1.5rem',
                   fontWeight: 700,
                   marginTop: '4px',
-                  color: predictionResult.predicted_class_index === 1 ? '#f59e0b' : '#10b981'
+                  color: activePredictionResult.predicted_class_index === 1 ? '#f59e0b' : '#10b981'
                 }}>
-                  {predictionResult.predicted_class_label}
+                  {activePredictionResult.predicted_class_label}
                   <span style={{ fontSize: '0.8125rem', color: '#64748b', fontWeight: 400, marginLeft: '6px' }}>
-                    (Index {predictionResult.predicted_class_index})
+                    (Index {activePredictionResult.predicted_class_index})
                   </span>
                 </div>
                 <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>
-                  {predictionResult.predicted_class_index === 0 ? 'Normal Sinus Rhythm Proxy' : 'Myocardial Infarction / STTC Proxy'}
+                  {activePredictionResult.predicted_class_index === 0 ? 'Normal Sinus Rhythm Proxy' : 'Myocardial Infarction / STTC Proxy'}
                 </span>
               </div>
 
-              {/* Model Sigmoid Probability */}
+              {/* Model score */}
               <div style={{ background: '#0f172a', borderRadius: 'var(--radius-md)', padding: '1rem', border: '1px solid #1e293b' }}>
                 <span style={{ fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  Sigmoid Class-1 Probability
+                  {workflow === 'gat_fusion' ? 'Uncalibrated GAT Confidence (Class 1)' : 'Sigmoid Class-1 Probability'}
                 </span>
                 <div style={{ fontSize: '1.5rem', fontWeight: 700, marginTop: '4px', color: '#38bdf8' }}>
-                  {(predictionResult.probability * 100).toFixed(2)}%
+                  {activeScore != null ? `${(activeScore * 100).toFixed(2)}%` : '—'}
                 </div>
                 <div style={{
                   height: '6px',
@@ -905,9 +1033,9 @@ export function DiagnosticWorkspace({ assignedPatients = [], onPredictionComplet
                   marginTop: '8px'
                 }}>
                   <div style={{
-                    width: `${Math.min(100, Math.max(0, predictionResult.probability * 100))}%`,
+                    width: `${activeScore != null ? Math.min(100, Math.max(0, activeScore * 100)) : 0}%`,
                     height: '100%',
-                    background: predictionResult.probability >= 0.5 ? '#f59e0b' : '#10b981'
+                    background: activeScore != null && activeScore >= 0.5 ? '#f59e0b' : '#10b981'
                   }} />
                 </div>
                 <span style={{ fontSize: '0.6875rem', color: '#64748b', display: 'block', marginTop: '4px' }}>
@@ -921,14 +1049,14 @@ export function DiagnosticWorkspace({ assignedPatients = [], onPredictionComplet
                   Architecture & Version
                 </span>
                 <div style={{ fontSize: '0.875rem', fontWeight: 600, color: '#f8fafc', marginTop: '6px', fontFamily: 'monospace' }}>
-                  {predictionResult.architecture_id}
+                  {activePredictionResult.architecture_id}
                 </div>
                 <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '2px', fontFamily: 'monospace' }}>
-                  tag: {predictionResult.model_version_tag}
+                  tag: {activePredictionResult.model_version_tag}
                 </div>
                 <div style={{ marginTop: '6px' }}>
                   <span className="badge badge-success" style={{ fontSize: '0.65rem' }}>
-                    Privacy: {predictionResult.privacy_validation_status || 'VALIDATED'}
+                    Privacy: {activePredictionResult.privacy_validation_status || 'VALIDATED'}
                   </span>
                 </div>
               </div>
@@ -939,11 +1067,14 @@ export function DiagnosticWorkspace({ assignedPatients = [], onPredictionComplet
                   Evaluation Provenance
                 </span>
                 <div style={{ fontSize: '0.75rem', color: '#e2e8f0', marginTop: '4px', fontFamily: 'monospace', wordBreak: 'break-all' }}>
-                  {predictionResult.provenance}
+                  {activePredictionResult.provenance
+                    || (workflow === 'gat_fusion'
+                      ? 'gat_fusion:encoder_embeddings→graph_attention_network'
+                      : '—')}
                 </div>
                 <div style={{ fontSize: '0.7rem', color: '#64748b', marginTop: '6px' }}>
                   <Clock size={11} style={{ display: 'inline', marginRight: '3px' }} />
-                  {predictionResult.evaluated_at || new Date().toISOString()}
+                  {activePredictionResult.evaluated_at || new Date().toISOString()}
                 </div>
               </div>
             </div>
@@ -951,7 +1082,7 @@ export function DiagnosticWorkspace({ assignedPatients = [], onPredictionComplet
             {/* Target Definition from Model Contract */}
             <div style={{ background: '#040711', padding: '0.75rem', borderRadius: 'var(--radius-sm)', marginBottom: '1rem', fontSize: '0.8125rem' }}>
               <span style={{ color: '#94a3b8', fontWeight: 600 }}>Target Definition:</span>{' '}
-              <span style={{ color: '#e2e8f0' }}>{predictionResult.target_definition}</span>
+              <span style={{ color: '#e2e8f0' }}>{activePredictionResult.target_definition}</span>
             </div>
 
             {/* Strict Medical Safety Disclaimer */}
@@ -960,7 +1091,7 @@ export function DiagnosticWorkspace({ assignedPatients = [], onPredictionComplet
                 Medical Research Safety Notice & Limitations:
               </strong>
               <p style={{ margin: 0, color: '#d6d3d1' }}>
-                {predictionResult.disclaimer}
+                {activePredictionResult.disclaimer}
               </p>
             </div>
           </div>

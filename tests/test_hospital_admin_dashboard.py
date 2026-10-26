@@ -353,7 +353,7 @@ async def test_system_health_explicit_hardware_states(seeded_test_env):
         assert data["database"]["status"] == "AVAILABLE"
         assert data["system_hardware"]["cpu_usage"] == "NOT_MEASURED"
         assert data["system_hardware"]["memory_usage"] == "NOT_MEASURED"
-        assert data["system_hardware"]["worker_health"] == "NOT_IMPLEMENTED"
+        assert data["system_hardware"]["worker_health"] == "NOT_MEASURED"
 
 
 @pytest.mark.anyio
