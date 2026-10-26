@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime, timezone
 from typing import List, Optional
-from sqlalchemy import DateTime, Float, ForeignKey, String, UniqueConstraint
+from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.db.base import Base
@@ -113,6 +113,7 @@ class DiagnosisPrediction(Base):
     prediction_type: Mapped[str] = mapped_column(String(50), nullable=False, default="proxy_evaluation")
     provenance: Mapped[str] = mapped_column(String(255), nullable=False, default="gat_inference_pipeline")
     confidence: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    predicted_class_index: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="disabled")  # disabled, evaluated, pending
 
     created_at: Mapped[datetime] = mapped_column(

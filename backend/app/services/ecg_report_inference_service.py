@@ -22,6 +22,7 @@ from backend.app.schemas.ecg_report_inference import (
     ECGReportEvaluateResponse,
     ECGReportReadinessResponse,
 )
+from backend.app.services.prediction_proxy_class import ecg_idempotent_replay_class
 from ml.inference.ecg_report_runtime import get_ecg_report_runtime
 
 logger = logging.getLogger(__name__)
@@ -112,6 +113,7 @@ class ECGReportInferenceService:
         user: Optional[User] = None,
         profile: Optional[ClinicianProfile] = None,
         patient: Optional[Patient] = None,
+        hospital_id: Optional[uuid.UUID] = None,
     ) -> ECGReportEvaluateResponse:
         """
         Evaluate 12-lead ECG and clinical report.
@@ -166,7 +168,25 @@ class ECGReportInferenceService:
         prediction_id = uuid.uuid4()
 
         # If patient-associated, persist to database with clinical provenance
-        if patient and db and profile:
+        if patient and db:
+            resolved_hospital_id = hospital_id
+            if resolved_hospital_id is None:
+                resolved_hospital_id = profile.hospital_id if profile else None
+            if resolved_hospital_id is None:
+                from backend.app.models.patient import PatientHospitalAssociation
+
+                assoc_stmt = (
+                    select(PatientHospitalAssociation)
+                    .where(PatientHospitalAssociation.patient_id == patient.id)
+                    .limit(1)
+                )
+                assoc = (await db.execute(assoc_stmt)).scalar_one_or_none()
+                if not assoc:
+                    raise ValidationAppError(
+                        "Patient reference is not associated with a hospital node; cannot persist prediction."
+                    )
+                resolved_hospital_id = assoc.hospital_id
+
             model_version = await ECGReportInferenceService._get_or_create_model_version(
                 db,
                 version_tag=result["model_version_tag"],
@@ -183,12 +203,13 @@ class ECGReportInferenceService:
             prediction = DiagnosisPrediction(
                 id=prediction_id,
                 patient_id=patient.id,
-                hospital_id=profile.hospital_id,
+                hospital_id=resolved_hospital_id,
                 model_version_id=model_version.id,
                 target_definition=result["target_definition"],
                 prediction_type="proxy_evaluation",
                 provenance=provenance,
                 confidence=float(result["probability"]),
+                predicted_class_index=int(result["predicted_class_index"]),
                 status="evaluated",
             )
             db.add(prediction)
@@ -252,8 +273,7 @@ class ECGReportInferenceService:
     @staticmethod
     def _to_response(row: DiagnosisPrediction) -> ECGReportEvaluateResponse:
         prob = row.confidence or 0.0
-        class_idx = 1 if prob >= 0.5 else 0
-        label = "MI/STTC" if prob >= 0.5 else "NORM"
+        class_idx, label = ecg_idempotent_replay_class(row.predicted_class_index, row.confidence)
         return ECGReportEvaluateResponse(
             status="EVALUATED",
             prediction_id=row.id,

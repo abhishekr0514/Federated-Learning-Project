@@ -20,7 +20,9 @@ from backend.app.api.dependencies import (
 from backend.app.models.identity import ClinicianProfile, User
 from backend.app.models.patient import Patient
 from backend.app.services.clinician_service import ClinicianService
+from backend.app.schemas.patient_questions import ClinicianQuestionResponseRequest
 from backend.app.services.document_ingestion_service import DocumentIngestionService
+from backend.app.services.patient_question_service import PatientQuestionService
 
 router = APIRouter(prefix="/clinician", tags=["Clinician Workspace"])
 
@@ -43,8 +45,14 @@ async def get_assigned_patients(
     clinician_ctx: Tuple[User, Optional[ClinicianProfile]] = Depends(get_current_clinician_context),
 ) -> Dict[str, Any]:
     """Retrieve paginated list of authorized assigned patient references."""
-    _, profile = clinician_ctx
-    return await ClinicianService.get_assigned_patients(db, profile, limit=limit, offset=offset)
+    user, profile = clinician_ctx
+    return await ClinicianService.get_assigned_patients(
+        db,
+        profile,
+        limit=limit,
+        offset=offset,
+        super_admin_list_all=user.is_super_admin,
+    )
 
 
 @router.get("/patients/eligible")
@@ -159,6 +167,44 @@ async def process_clinical_document(
         user=user,
         profile=profile,
         document_id=document_id,
+    )
+
+
+@router.get("/questions")
+async def get_clinician_question_inbox(
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    clinician_ctx: Tuple[User, Optional[ClinicianProfile]] = Depends(get_current_clinician_context),
+) -> Dict[str, Any]:
+    """Inbox of patient questions for explicitly assigned patients."""
+    _, profile = clinician_ctx
+    if not profile:
+        return {"status": "NO_DATA", "questions": [], "limit": limit, "offset": offset}
+    return await PatientQuestionService.list_clinician_questions(
+        db, profile, limit=limit, offset=offset
+    )
+
+
+@router.patch("/questions/{question_id}")
+async def update_clinician_question(
+    question_id: uuid.UUID,
+    body: ClinicianQuestionResponseRequest,
+    db: AsyncSession = Depends(get_db),
+    clinician_ctx: Tuple[User, Optional[ClinicianProfile]] = Depends(get_current_clinician_context),
+) -> Dict[str, Any]:
+    """Mark a patient question reviewed and/or submit a clinician response."""
+    _, profile = clinician_ctx
+    if not profile:
+        from backend.app.core.errors import ForbiddenError
+
+        raise ForbiddenError("Active Clinician Profile required.")
+    return await PatientQuestionService.clinician_update_question(
+        db,
+        profile,
+        question_id,
+        mark_reviewed=body.mark_reviewed,
+        response_text=body.response_text,
     )
 
 

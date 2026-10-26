@@ -68,6 +68,8 @@ export function ClinicianDashboard() {
   const [eligibleLoading, setEligibleLoading] = useState(false);
   const [assigningPatientId, setAssigningPatientId] = useState(null);
   const [assignError, setAssignError] = useState(null);
+  const [clinicianQuestions, setClinicianQuestions] = useState([]);
+  const [questionResponses, setQuestionResponses] = useState({});
 
   // Selected patient for dossier drill-down
   const [selectedPatientId, setSelectedPatientId] = useState(null);
@@ -304,6 +306,19 @@ export function ClinicianDashboard() {
     }
   }, []);
 
+  const fetchClinicianQuestions = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await apiRequest('/api/v1/clinician/questions?limit=50&offset=0');
+      setClinicianQuestions(data.questions || []);
+    } catch (err) {
+      setError(err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   // Switch tabs and load relevant data
   useEffect(() => {
     if (activeTab === 'dashboard') {
@@ -321,8 +336,10 @@ export function ClinicianDashboard() {
       fetchDiagnosis();
     } else if (activeTab === 'causal') {
       fetchCapabilities();
+    } else if (activeTab === 'questions') {
+      fetchClinicianQuestions();
     }
-  }, [activeTab, fetchOverview, fetchPatients, fetchEligiblePatients, fetchDocuments, fetchDiagnosis, selectedPatientId]);
+  }, [activeTab, fetchOverview, fetchPatients, fetchEligiblePatients, fetchDocuments, fetchDiagnosis, fetchClinicianQuestions, selectedPatientId]);
 
   // When patient drilldown is opened
   const handleSelectPatient = (patientId) => {
@@ -633,6 +650,70 @@ export function ClinicianDashboard() {
           assignedPatients={patients}
           onPredictionComplete={() => fetchDiagnosis()}
         />
+      )}
+
+      {activeTab === 'questions' && (
+        <div>
+          <div className="card" style={{ marginBottom: '1rem' }}>
+            <h2 style={{ fontSize: '1.125rem', margin: 0 }}>Patient question inbox</h2>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
+              Questions from patients explicitly assigned to you. Not for emergency triage.
+            </p>
+          </div>
+          {clinicianQuestions.length === 0 ? (
+            <p style={{ color: 'var(--text-muted)' }}>No patient questions in your authorized inbox.</p>
+          ) : (
+            clinicianQuestions.map((q) => (
+              <div key={q.question_id} className="card" style={{ marginBottom: '0.75rem' }}>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                  {q.opaque_patient_id} · {q.status} · {q.submitted_at ? new Date(q.submitted_at).toLocaleString() : ''}
+                </div>
+                <p style={{ fontSize: '0.875rem', margin: '0.5rem 0' }}>{q.question_text}</p>
+                {q.response_text && <p style={{ fontSize: '0.875rem', color: '#86efac' }}>Response: {q.response_text}</p>}
+                <textarea
+                  className="form-input"
+                  rows={2}
+                  placeholder="Optional response to patient..."
+                  value={questionResponses[q.question_id] || ''}
+                  onChange={(e) =>
+                    setQuestionResponses((prev) => ({ ...prev, [q.question_id]: e.target.value }))
+                  }
+                />
+                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={async () => {
+                      await apiRequest(`/api/v1/clinician/questions/${q.question_id}`, {
+                        method: 'PATCH',
+                        body: JSON.stringify({ mark_reviewed: true }),
+                      });
+                      fetchClinicianQuestions();
+                    }}
+                  >
+                    Mark reviewed
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-sm"
+                    disabled={!(questionResponses[q.question_id] || '').trim()}
+                    onClick={async () => {
+                      await apiRequest(`/api/v1/clinician/questions/${q.question_id}`, {
+                        method: 'PATCH',
+                        body: JSON.stringify({
+                          response_text: questionResponses[q.question_id].trim(),
+                        }),
+                      });
+                      fetchClinicianQuestions();
+                    }}
+                  >
+                    Send response
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
       )}
 
       {/* =========================================================================

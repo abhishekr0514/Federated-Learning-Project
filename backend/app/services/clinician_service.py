@@ -8,7 +8,7 @@ Enforces:
 
 import uuid
 from typing import Any, Dict, List, Optional
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -18,6 +18,7 @@ from backend.app.services.capability_registry import (
     get_platform_capability_report,
 )
 from backend.app.models.identity import ClinicianProfile, Hospital, User
+from backend.app.utils.patient_reference_display import enrich_patient_list_entry
 from backend.app.models.patient import Patient, PatientClinicianAssignment, PatientHospitalAssociation
 from backend.app.models.clinical import (
     ClinicalObservation,
@@ -124,24 +125,55 @@ class ClinicianService:
         profile: Optional[ClinicianProfile],
         limit: int = 50,
         offset: int = 0,
+        *,
+        super_admin_list_all: bool = False,
     ) -> Dict[str, Any]:
         """Retrieve paginated list of authorized patient references."""
-        if not profile:
+        if super_admin_list_all or not profile:
             count_stmt = select(func.count(Patient.id))
-            query_stmt = select(Patient).limit(limit).offset(offset)
+            demo_first = case(
+                (Patient.opaque_patient_id.like("DEMO-SYNTH-%"), 0),
+                else_=1,
+            )
+            query_stmt = (
+                select(Patient)
+                .order_by(demo_first, Patient.opaque_patient_id.asc())
+                .limit(limit)
+                .offset(offset)
+            )
             total = (await db.execute(count_stmt)).scalar_one() or 0
             patients = (await db.execute(query_stmt)).scalars().all()
-            
+
             patient_list = []
             for p in patients:
-                patient_list.append({
-                    "patient_id": str(p.id),
-                    "opaque_patient_id": p.opaque_patient_id,
-                    "hospital_id": None,
-                    "assigned_at": p.created_at.isoformat() if p.created_at else None,
-                    "documents_count": 0,
-                    "ecg_records_count": 0,
-                })
+                hosp_code_stmt = (
+                    select(Hospital.code)
+                    .join(
+                        PatientHospitalAssociation,
+                        PatientHospitalAssociation.hospital_id == Hospital.id,
+                    )
+                    .where(PatientHospitalAssociation.patient_id == p.id)
+                    .limit(1)
+                )
+                hospital_code = (await db.execute(hosp_code_stmt)).scalar_one_or_none()
+                hosp_assoc_stmt = (
+                    select(PatientHospitalAssociation.hospital_id)
+                    .where(PatientHospitalAssociation.patient_id == p.id)
+                    .limit(1)
+                )
+                hospital_id = (await db.execute(hosp_assoc_stmt)).scalar_one_or_none()
+
+                patient_list.append(
+                    enrich_patient_list_entry(
+                        patient_id=str(p.id),
+                        opaque_patient_id=p.opaque_patient_id,
+                        hospital_code=hospital_code,
+                        hospital_id=str(hospital_id) if hospital_id else None,
+                        assigned_at=p.created_at.isoformat() if p.created_at else None,
+                        documents_count=0,
+                        ecg_records_count=0,
+                    )
+                )
             return {
                 "status": "AVAILABLE" if total > 0 else "NO_DATA",
                 "total_count": total,
@@ -182,15 +214,17 @@ class ClinicianService:
             ecg_cnt_stmt = select(func.count(ECGRecord.id)).where(ECGRecord.patient_id == pat.id)
             ecg_cnt = (await db.execute(ecg_cnt_stmt)).scalar_one() or 0
 
-            patient_list.append({
-                "patient_id": str(pat.id),
-                "opaque_patient_id": pat.opaque_patient_id,
-                "hospital_id": str(assign.hospital_id),
-                "hospital_code": hospital_code,
-                "assigned_at": assign.created_at.isoformat() if assign.created_at else None,
-                "documents_count": doc_cnt,
-                "ecg_records_count": ecg_cnt,
-            })
+            patient_list.append(
+                enrich_patient_list_entry(
+                    patient_id=str(pat.id),
+                    opaque_patient_id=pat.opaque_patient_id,
+                    hospital_code=hospital_code,
+                    hospital_id=str(assign.hospital_id),
+                    assigned_at=assign.created_at.isoformat() if assign.created_at else None,
+                    documents_count=doc_cnt,
+                    ecg_records_count=ecg_cnt,
+                )
+            )
 
         return {
             "status": "AVAILABLE" if total > 0 else "NO_DATA",

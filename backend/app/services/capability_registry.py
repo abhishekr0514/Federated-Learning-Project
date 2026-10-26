@@ -175,14 +175,21 @@ def get_clinician_workspace_capabilities() -> Dict[str, str]:
 
 
 def get_patient_portal_capabilities() -> Dict[str, str]:
+    details = get_capability_details()
     clin = get_clinician_workspace_capabilities()
+    gat_status = clin["multimodal_gat_fusion"]
+    if not settings.INFERENCE_ENABLED:
+        ai_assessment = "NOT_ENABLED"
+    else:
+        ai_assessment = gat_status
     return {
-        "ai_assisted_assessment": "NOT_ENABLED",
+        "ai_assisted_assessment": ai_assessment,
         "ecg_analysis": clin["ecg_report_inference"],
         "explanation_summaries": clin["dice_counterfactuals"],
         "causal_insights": clin["dowhy_causal"],
         "clinical_decision_support": clin["clinical_decision_support"],
-        "patient_messaging": "NOT_IMPLEMENTED",
+        "patient_messaging": "AVAILABLE",
+        "clinician_messaging": "AVAILABLE",
     }
 
 

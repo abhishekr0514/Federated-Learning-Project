@@ -16,12 +16,13 @@ import {
   Radio,
   FileSpreadsheet,
   Bell,
+  MessageSquare,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { capabilityNavBadge } from '../utils/capabilityNav';
 import { fetchPlatformCapabilities } from '../services/capabilityClient';
 
-export function Sidebar({ isOpen, activeTab, onSelectTab, role }) {
+export function Sidebar({ isOpen, activeTab, onSelectTab, role, patientPortalBadges = null }) {
   const { user, permissions } = useAuth();
   const [capabilityBadges, setCapabilityBadges] = useState(null);
 
@@ -139,6 +140,7 @@ export function Sidebar({ isOpen, activeTab, onSelectTab, role }) {
           { id: 'inference', label: 'Diagnostic Studio', icon: Activity, badge: 'Live ML' },
           { id: 'patients', label: 'Assigned Patients', icon: Stethoscope },
           { id: 'documents', label: 'Clinical Reports', icon: FileText },
+          { id: 'questions', label: 'Patient Questions', icon: MessageSquare },
         ],
       },
       {
@@ -152,16 +154,27 @@ export function Sidebar({ isOpen, activeTab, onSelectTab, role }) {
       },
     ];
   } else if (role === 'PATIENT') {
+    const pb = patientPortalBadges || {};
     navConfig = [
       {
         group: 'Personal Health Portal',
         items: [
           { id: 'health', label: 'My Health', icon: Heart },
-          { id: 'records', label: 'My Records', icon: FileText },
-          { id: 'reports', label: 'My Reports', icon: Activity },
-          { id: 'assessment', label: 'My Assessment', icon: Stethoscope, badge: 'Offline' },
-          { id: 'results', label: 'My Results', icon: FileSpreadsheet },
-          { id: 'questions', label: 'Questions for My Clinician', icon: HelpCircle, badge: 'Offline' },
+          { id: 'records', label: 'My Records', icon: FileText, badge: pb.records },
+          { id: 'reports', label: 'My Reports', icon: Activity, badge: pb.reports },
+          {
+            id: 'assessment',
+            label: 'My Assessment',
+            icon: Stethoscope,
+            badge: pb.assessment || 'Not enabled',
+          },
+          { id: 'results', label: 'My Results', icon: FileSpreadsheet, badge: pb.results },
+          {
+            id: 'questions',
+            label: 'Questions for My Clinician',
+            icon: HelpCircle,
+            badge: pb.messaging || 'Not built',
+          },
         ],
       },
     ];

@@ -176,13 +176,21 @@ def register_exception_handlers(app: FastAPI) -> None:
         from backend.app.db.connectivity import database_target_summary
 
         target = database_target_summary()
+        orig = getattr(exc, "orig", None)
+        privilege_hint = ""
+        if orig is not None and type(orig).__name__ == "InsufficientPrivilegeError":
+            privilege_hint = (
+                " (application DB role lacks table privileges; "
+                "run scripts/apply_patient_questions_grants.py or scripts/migrations/002_grant_patient_clinician_questions.sql as postgres)"
+            )
         logger.error(
-            "Database error: %s target=%s@%s:%s/%s",
+            "Database error: %s target=%s@%s:%s/%s%s",
             type(exc).__name__,
             target.get("username"),
             target.get("host"),
             target.get("port"),
             target.get("database"),
+            privilege_hint,
             exc_info=True,
         )
         return build_error_response(

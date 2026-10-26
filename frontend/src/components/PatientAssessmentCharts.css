@@ -1,0 +1,210 @@
+/* Patient assessment dashboard — normal document flow, no overlapping sections */
+
+.patient-assessment-charts {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  width: 100%;
+  min-width: 0;
+}
+
+.patient-assessment-charts__section {
+  min-width: 0;
+  width: 100%;
+}
+
+.patient-assessment-charts__section.card {
+  margin-bottom: 0;
+}
+
+.patient-assessment-charts__chart-shell {
+  width: 100%;
+  min-width: 0;
+  margin-top: 0.75rem;
+}
+
+.patient-assessment-charts__chart-shell svg {
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  display: block;
+  vertical-align: top;
+}
+
+.patient-assessment-charts__tooltip {
+  margin-top: 0.75rem;
+  padding: 0.65rem 0.85rem;
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  background: rgba(15, 23, 42, 0.92);
+  border: 1px solid var(--border-color, #334155);
+  border-radius: var(--radius-md, 6px);
+  color: var(--text-secondary, #e2e8f0);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.patient-assessment-charts__tooltip-row {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.patient-assessment-detail-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.65rem 1rem;
+  font-size: 0.875rem;
+  line-height: 1.55;
+  min-width: 0;
+}
+
+@media (min-width: 640px) {
+  .patient-assessment-detail-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+.patient-assessment-detail-grid__item {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.patient-assessment-detail-grid__item dt {
+  font-weight: 600;
+  color: var(--text-muted, #94a3b8);
+  font-size: 0.75rem;
+  margin: 0 0 0.15rem;
+}
+
+.patient-assessment-detail-grid__item dd {
+  margin: 0;
+  color: var(--text-primary, #f9fafb);
+}
+
+.patient-assessment-history-wrap {
+  width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.patient-assessment-history-table {
+  width: 100%;
+  min-width: 0;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
+.patient-assessment-history-table th,
+.patient-assessment-history-table td {
+  padding: 0.65rem 0.75rem;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--border-color, #334155);
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.patient-assessment-history-table th {
+  color: var(--text-muted, #94a3b8);
+  font-weight: 600;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.patient-assessment-history-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+@media (max-width: 639px) {
+  .patient-assessment-history-table thead {
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .patient-assessment-history-table tbody tr {
+    display: block;
+    margin-bottom: 1rem;
+    padding: 0.75rem;
+    border: 1px solid var(--border-color, #334155);
+    border-radius: var(--radius-md, 6px);
+    background: rgba(15, 23, 42, 0.35);
+  }
+
+  .patient-assessment-history-table tbody td {
+    display: block;
+    border-bottom: none;
+    padding: 0.35rem 0;
+  }
+
+  .patient-assessment-history-table tbody td::before {
+    content: attr(data-label);
+    display: block;
+    font-weight: 600;
+    font-size: 0.7rem;
+    color: var(--text-muted, #94a3b8);
+    margin-bottom: 0.15rem;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+  }
+}
+
+.patient-assessment-history-card {
+  display: none;
+}
+
+@media (max-width: 639px) {
+  .patient-assessment-history-wrap--desktop {
+    display: none;
+  }
+
+  .patient-assessment-history-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .patient-assessment-history-card {
+    display: block;
+    padding: 0.85rem;
+    border: 1px solid var(--border-color, #334155);
+    border-radius: var(--radius-md, 6px);
+    background: rgba(15, 23, 42, 0.35);
+    min-width: 0;
+  }
+
+  .patient-assessment-history-card dl {
+    margin: 0;
+    display: grid;
+    gap: 0.5rem;
+  }
+
+  .patient-assessment-history-card dt {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--text-muted, #94a3b8);
+    text-transform: uppercase;
+  }
+
+  .patient-assessment-history-card dd {
+    margin: 0 0 0.35rem;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+}
+
+@media (min-width: 640px) {
+  .patient-assessment-history-cards {
+    display: none;
+  }
+}

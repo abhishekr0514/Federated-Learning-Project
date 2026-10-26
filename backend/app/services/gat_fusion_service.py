@@ -7,13 +7,20 @@ import uuid
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from backend.app.core.config import settings
 from backend.app.core.errors import InferenceNotReadyError, ValidationAppError
+from backend.app.models.identity import ClinicianProfile
+from backend.app.models.ml_models import DiagnosisPrediction, ModelVersion
+from backend.app.models.patient import Patient, PatientHospitalAssociation
 from backend.app.schemas.gat_fusion import (
     GATFusionEvaluateRequest,
     GATFusionEvaluateResponse,
     GATFusionReadinessResponse,
 )
+from backend.app.services.prediction_proxy_class import gat_idempotent_replay_class
 from ml.fusion.pipeline import MultimodalGATPipeline
 from ml.inference.fusion_runtime import get_fusion_inference_runtime
 
@@ -92,9 +99,12 @@ class GATFusionService:
 
     @staticmethod
     async def evaluate(
+        db: Optional[AsyncSession],
         *,
         body: GATFusionEvaluateRequest,
-        patient_id: Optional[uuid.UUID] = None,
+        profile: Optional[ClinicianProfile] = None,
+        patient: Optional[Patient] = None,
+        hospital_id: Optional[uuid.UUID] = None,
     ) -> GATFusionEvaluateResponse:
         runtime = _get_runtime()
         readiness = runtime.assess_readiness()
@@ -103,6 +113,13 @@ class GATFusionService:
                 "Two-modality GAT fusion is not ready.",
                 details=readiness.to_safe_dict(),
             )
+
+        if patient and db and body.idempotency_key:
+            existing = await GATFusionService._find_idempotent_prediction(
+                db, patient.id, body.idempotency_key
+            )
+            if existing:
+                return GATFusionService._to_response(existing, result_architecture_id=None)
 
         try:
             result = runtime.run_proxy_inference(
@@ -117,15 +134,133 @@ class GATFusionService:
             logger.error("GAT fusion inference failed: %s", type(exc).__name__)
             raise ValidationAppError("GAT fusion evaluation failed.") from exc
 
+        prediction_id = uuid.uuid4()
+        architecture_id = str(
+            result.get("architecture_id", "medshield.diagnostic_net.gat_ecg_report")
+        )
+
+        if patient and db:
+            if hospital_id is None:
+                hospital_id = await GATFusionService._resolve_hospital_id(db, patient, profile)
+            model_version = await GATFusionService._get_or_create_model_version(
+                db,
+                version_tag=result["model_version_tag"],
+                target_definition=result["target_definition"],
+                artifact_uri=str(_fusion_model_dir() / "medshield_fusion_manifest.json"),
+            )
+            provenance = (
+                f"idempotency:{body.idempotency_key}"
+                if body.idempotency_key
+                else "gat_fusion_inference_pipeline"
+            )
+            prediction = DiagnosisPrediction(
+                id=prediction_id,
+                patient_id=patient.id,
+                hospital_id=hospital_id,
+                model_version_id=model_version.id,
+                target_definition=result["target_definition"],
+                prediction_type="proxy_evaluation",
+                provenance=provenance,
+                confidence=float(result["confidence_uncalibrated"]),
+                predicted_class_index=int(result["predicted_class_index"]),
+                status="evaluated",
+            )
+            db.add(prediction)
+            await db.flush()
+
         return GATFusionEvaluateResponse(
             status="EVALUATED",
-            prediction_id=uuid.uuid4(),
-            patient_id=patient_id,
+            prediction_id=prediction_id,
+            patient_id=patient.id if patient else None,
             confidence_uncalibrated=float(result["confidence_uncalibrated"]),
             predicted_class_index=int(result["predicted_class_index"]),
             predicted_class_label=str(result["predicted_class_label"]),
             target_definition=result["target_definition"],
-            architecture_id=str(result.get("architecture_id", "medshield.diagnostic_net.gat_ecg_report")),
+            architecture_id=architecture_id,
             model_version_tag=result["model_version_tag"],
             disclaimer=result["disclaimer"],
+            proxy_task=patient is None,
+        )
+
+    @staticmethod
+    async def _resolve_hospital_id(
+        db: AsyncSession,
+        patient: Patient,
+        profile: Optional[ClinicianProfile],
+    ) -> uuid.UUID:
+        if profile is not None:
+            return profile.hospital_id
+        stmt = (
+            select(PatientHospitalAssociation)
+            .where(PatientHospitalAssociation.patient_id == patient.id)
+            .limit(1)
+        )
+        assoc = (await db.execute(stmt)).scalar_one_or_none()
+        if not assoc:
+            raise ValidationAppError(
+                "Patient reference is not associated with a hospital node; cannot persist prediction."
+            )
+        return assoc.hospital_id
+
+    @staticmethod
+    async def _find_idempotent_prediction(
+        db: AsyncSession,
+        patient_id: uuid.UUID,
+        idempotency_key: str,
+    ) -> Optional[DiagnosisPrediction]:
+        stmt = select(DiagnosisPrediction).where(
+            DiagnosisPrediction.patient_id == patient_id,
+            DiagnosisPrediction.provenance == f"idempotency:{idempotency_key}",
+        )
+        res = await db.execute(stmt)
+        return res.scalar_one_or_none()
+
+    @staticmethod
+    async def _get_or_create_model_version(
+        db: AsyncSession,
+        *,
+        version_tag: str,
+        target_definition: str,
+        artifact_uri: str,
+    ) -> ModelVersion:
+        stmt = select(ModelVersion).where(ModelVersion.version_tag == version_tag)
+        res = await db.execute(stmt)
+        existing = res.scalar_one_or_none()
+        if existing:
+            return existing
+        version = ModelVersion(
+            id=uuid.uuid4(),
+            model_family="MedShield-GAT-ECG-Report-Fusion",
+            version_tag=version_tag,
+            architecture_config="medshield.diagnostic_net.gat_ecg_report@1.0.0",
+            target_definition=target_definition[:255],
+            status="experimental",
+            artifact_uri=artifact_uri[:512],
+        )
+        db.add(version)
+        await db.flush()
+        return version
+
+    @staticmethod
+    def _to_response(
+        row: DiagnosisPrediction,
+        *,
+        result_architecture_id: Optional[str],
+    ) -> GATFusionEvaluateResponse:
+        prob = row.confidence or 0.0
+        class_idx, label = gat_idempotent_replay_class(row.predicted_class_index)
+        return GATFusionEvaluateResponse(
+            status="EVALUATED",
+            prediction_id=row.id,
+            patient_id=row.patient_id,
+            confidence_uncalibrated=float(prob),
+            predicted_class_index=class_idx,
+            predicted_class_label=label,
+            target_definition=row.target_definition,
+            architecture_id=result_architecture_id or "medshield.diagnostic_net.gat_ecg_report",
+            model_version_tag="gat-ecg-report-fusion",
+            disclaimer=(
+                "EXPERIMENTAL RESEARCH PROXY OUTPUT ONLY. Replayed from idempotent execution."
+            ),
+            proxy_task=False,
         )

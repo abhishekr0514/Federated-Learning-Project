@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Navbar } from '../components/Navbar';
 import { Sidebar } from '../components/Sidebar';
 
-export function PatientLayout({ activeTab, onSelectTab, children }) {
+export function PatientLayout({ activeTab, onSelectTab, children, portalNavBadges = null }) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   return (
@@ -17,6 +17,7 @@ export function PatientLayout({ activeTab, onSelectTab, children }) {
           activeTab={activeTab}
           onSelectTab={onSelectTab}
           role="PATIENT"
+          patientPortalBadges={portalNavBadges}
         />
         <main className="content-area">{children}</main>
       </div>

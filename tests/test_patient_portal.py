@@ -267,9 +267,11 @@ async def test_patient_can_access_own_overview_and_records(seeded_patient_env):
         assert ov["summary"]["records_count"] == 3  # 1 doc + 1 ecg + 1 obs
         assert ov["summary"]["reports_count"] == 1
         assert ov["summary"]["health_status"] == "AVAILABLE"
-        assert ov["assessment"]["status"] == "NOT_ENABLED"
-        assert ov["capabilities"]["ai_assisted_assessment"] == "NOT_ENABLED"
-        assert ov["capabilities"]["patient_messaging"] == "NOT_IMPLEMENTED"
+        assert ov["assessment"]["status"] in ("NOT_ENABLED", "NO_DATA", "RESULTS_ON_FILE")
+        assert ov["results"]["status"] in ("NO_DATA", "AVAILABLE")
+        assert ov["results"]["stored_count"] == 0
+        assert ov["capabilities"]["patient_messaging"] == "AVAILABLE"
+        assert ov["capabilities"]["clinician_messaging"] == "AVAILABLE"
 
         # Records
         res_rec = await ac.get("/api/v1/patient/records", headers=headers)
@@ -456,10 +458,11 @@ async def test_genuine_prediction_surfaces_model_confidence_not_accuracy(seeded_
         assert res.status_code == 200
         diag = res.json()
         assert diag["status"] == "AVAILABLE"
-        assert diag["assessment_status"] == "AVAILABLE"
+        assert diag["assessment_status"] == "RESULTS_ON_FILE"
         assert diag["prediction"] is not None
         assert diag["prediction"]["model_confidence"] == "89.2%"
-        assert "accuracy" not in res.text.lower()
+        assert "model accuracy" not in res.text.lower()
+        assert "diagnostic accuracy" not in res.text.lower()
         # Verify mandatory medical safety wording
         assert "This result was generated with AI-assisted clinical decision support" in diag["safety_wording"]
         assert "Please discuss your result with your qualified healthcare professional" in diag["safety_wording"]

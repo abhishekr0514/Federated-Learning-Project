@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from backend.app.core.errors import NotFoundError
+from backend.app.services.audit_writer import AuditWriter
 from backend.app.services.capability_registry import get_patient_portal_capabilities
 from backend.app.models.patient import Patient, PatientHospitalAssociation
 from backend.app.models.clinical import (
@@ -25,7 +26,8 @@ from backend.app.models.clinical import (
     MedicalDocument,
     PrivacyMaskingResult,
 )
-from backend.app.models.ml_models import DiagnosisPrediction
+from backend.app.models.ml_models import DiagnosisPrediction, ModelVersion
+from backend.app.services.prediction_proxy_class import resolve_patient_portal_proxy_class
 
 
 MANDATORY_SAFETY_DISCLAIMER = (
@@ -37,6 +39,28 @@ MANDATORY_SAFETY_DISCLAIMER = (
 ASSESSMENT_UNAVAILABLE_DISCLAIMER = (
     "AI-assisted assessment is not currently available. "
     "Please discuss your health questions with your qualified healthcare professional."
+)
+
+RESEARCH_PROXY_VALIDATION_NOTICE = (
+    "Not clinically validated: outputs come from a PTB-XL research proxy task "
+    "(NORM vs MI/STTC classification), not from an approved diagnostic device."
+)
+
+PROXY_CLASS_EXPLAINER = {
+    "NORM": (
+        "Within this research dataset, class NORM (index 0) groups records labeled as "
+        "normal or otherwise not in the MI/STTC super-class used for the proxy task."
+    ),
+    "MI/STTC": (
+        "Within this research dataset, class MI/STTC (index 1) groups myocardial infarction "
+        "and ST/T-change labels used as a combined proxy super-class—not a individual clinical diagnosis."
+    ),
+}
+
+MODEL_CONFIDENCE_EXPLAINER = (
+    "Model confidence is the neural network's uncalibrated score for its chosen proxy class. "
+    "It is not the probability that you have a disease, not sensitivity/specificity, "
+    "and not proof of clinical accuracy."
 )
 
 
@@ -51,7 +75,26 @@ class PatientService:
         """Retrieve patient's high-level health overview and assessment status.
         
         Uses plain non-technical language and strictly adheres to Zero Mock Data.
+        Writes an audit log entry recording this portal access event.
         """
+        # Resolve hospital scope for audit entry
+        hosp_assoc_stmt = select(PatientHospitalAssociation).where(
+            PatientHospitalAssociation.patient_id == patient.id
+        ).limit(1)
+        hosp_assoc = (await db.execute(hosp_assoc_stmt)).scalar_one_or_none()
+        audit_hospital_id = hosp_assoc.hospital_id if hosp_assoc else None
+
+        # Write audit event for patient portal overview access
+        await AuditWriter.write(
+            db,
+            event_type="PATIENT_PORTAL_OVERVIEW_ACCESS",
+            resource_type="Patient",
+            outcome="SUCCESS",
+            actor_id=patient.user_id,
+            hospital_id=audit_hospital_id,
+            resource_id=str(patient.id),
+        )
+
         # Query record counts
         doc_stmt = select(func.count(MedicalDocument.id)).where(MedicalDocument.patient_id == patient.id)
         doc_count = (await db.execute(doc_stmt)).scalar_one() or 0
@@ -89,6 +132,44 @@ class PatientService:
         if dates:
             latest_date = max(dates).isoformat()
 
+        pred_stmt = select(func.count(DiagnosisPrediction.id)).where(
+            DiagnosisPrediction.patient_id == patient.id
+        )
+        pred_count = (await db.execute(pred_stmt)).scalar_one() or 0
+
+        caps = get_patient_portal_capabilities()
+        ai_cap = caps.get("ai_assisted_assessment", "NOT_ENABLED")
+        if pred_count > 0:
+            assessment_status = "RESULTS_ON_FILE"
+            assessment_message = (
+                "Stored AI-assisted assessment results are available under My Results. "
+                "These are research/decision-support outputs, not a clinical diagnosis."
+            )
+        elif ai_cap == "NOT_ENABLED":
+            assessment_status = "NOT_ENABLED"
+            assessment_message = (
+                "AI-assisted assessment is not enabled in this environment. "
+                "Your care team uses standard clinical evaluation."
+            )
+        elif ai_cap == "NOT_IMPLEMENTED":
+            assessment_status = "NOT_IMPLEMENTED"
+            assessment_message = "Automated patient assessment is not implemented on the portal."
+        elif ai_cap in ("CONFIGURATION_REQUIRED", "MISSING_DEPENDENCY", "UNAVAILABLE"):
+            assessment_status = ai_cap
+            assessment_message = (
+                "The assessment service is not ready (configuration or dependencies missing). "
+                "No automated result will be shown until the platform is configured."
+            )
+        elif ai_cap == "AVAILABLE":
+            assessment_status = "NO_DATA"
+            assessment_message = (
+                "Assessment models are configured, but no completed assessment is stored for your account yet. "
+                "When your authorized clinician runs an evaluation, results may appear under My Results."
+            )
+        else:
+            assessment_status = ai_cap
+            assessment_message = "AI-assisted assessment is not currently available."
+
         return {
             "patient": {
                 "patient_id": str(patient.id),
@@ -105,11 +186,18 @@ class PatientService:
                 "health_message": None if total_records > 0 else "No health information is currently available.",
             },
             "assessment": {
-                "status": "NOT_ENABLED",
-                "message": "AI-assisted assessment is not currently available.",
+                "status": assessment_status,
+                "message": assessment_message,
                 "safety_wording": ASSESSMENT_UNAVAILABLE_DISCLAIMER,
             },
-            "capabilities": get_patient_portal_capabilities(),
+            "results": {
+                "status": "AVAILABLE" if pred_count > 0 else "NO_DATA",
+                "stored_count": int(pred_count),
+                "message": None
+                if pred_count > 0
+                else "No stored assessment results for your account.",
+            },
+            "capabilities": caps,
         }
 
     @staticmethod
@@ -120,7 +208,24 @@ class PatientService:
         """Retrieve list of authorized health records for the patient.
         
         Strictly excludes raw clinical text, raw ECG waveform arrays, and engineering metrics.
+        Writes an audit log entry for records access.
         """
+        hosp_assoc_stmt = select(PatientHospitalAssociation).where(
+            PatientHospitalAssociation.patient_id == patient.id
+        ).limit(1)
+        hosp_assoc = (await db.execute(hosp_assoc_stmt)).scalar_one_or_none()
+        audit_hospital_id = hosp_assoc.hospital_id if hosp_assoc else None
+
+        await AuditWriter.write(
+            db,
+            event_type="PATIENT_RECORDS_ACCESS",
+            resource_type="Patient",
+            outcome="SUCCESS",
+            actor_id=patient.user_id,
+            hospital_id=audit_hospital_id,
+            resource_id=str(patient.id),
+        )
+
         records: List[Dict[str, Any]] = []
 
         # 1. Medical Documents metadata
@@ -197,7 +302,24 @@ class PatientService:
         """Retrieve patient diagnostic reports.
         
         Only returns actual stored reports. Zero fabricated diagnoses or interpretations.
+        Writes an audit log entry for reports access.
         """
+        hosp_assoc_stmt = select(PatientHospitalAssociation).where(
+            PatientHospitalAssociation.patient_id == patient.id
+        ).limit(1)
+        hosp_assoc = (await db.execute(hosp_assoc_stmt)).scalar_one_or_none()
+        audit_hospital_id = hosp_assoc.hospital_id if hosp_assoc else None
+
+        await AuditWriter.write(
+            db,
+            event_type="PATIENT_REPORTS_ACCESS",
+            resource_type="MedicalDocument",
+            outcome="SUCCESS",
+            actor_id=patient.user_id,
+            hospital_id=audit_hospital_id,
+            resource_id=str(patient.id),
+        )
+
         doc_stmt = (
             select(MedicalDocument)
             .options(selectinload(MedicalDocument.masking_results))
@@ -237,6 +359,77 @@ class PatientService:
         }
 
     @staticmethod
+    async def _load_prediction_history(
+        db: AsyncSession,
+        patient_id: uuid.UUID,
+    ) -> List[Dict[str, Any]]:
+        stmt = (
+            select(DiagnosisPrediction, ModelVersion)
+            .join(ModelVersion, DiagnosisPrediction.model_version_id == ModelVersion.id)
+            .where(DiagnosisPrediction.patient_id == patient_id)
+            .order_by(DiagnosisPrediction.created_at.asc())
+        )
+        rows = (await db.execute(stmt)).all()
+        history: List[Dict[str, Any]] = []
+        for pred, model in rows:
+            proxy = resolve_patient_portal_proxy_class(
+                confidence=pred.confidence,
+                predicted_class_index=pred.predicted_class_index,
+                model_family=model.model_family,
+                class_meaning_map=PROXY_CLASS_EXPLAINER,
+            )
+            conf_pct = f"{pred.confidence * 100:.1f}%" if pred.confidence is not None else None
+            history.append(
+                {
+                    "prediction_id": str(pred.id),
+                    "assessment_date": pred.created_at.isoformat() if pred.created_at else None,
+                    "assessment_target": pred.target_definition,
+                    "model_confidence": conf_pct,
+                    "model_confidence_raw": pred.confidence,
+                    "predicted_proxy_class": proxy["predicted_proxy_class"],
+                    "predicted_class_index": proxy["predicted_class_index"],
+                    "proxy_class_status": proxy["proxy_class_status"],
+                    "model_version_tag": model.version_tag,
+                    "model_family": model.model_family,
+                    "architecture_config": model.architecture_config,
+                    "provenance": pred.provenance,
+                    "prediction_type": pred.prediction_type,
+                    "status": pred.status,
+                    "is_research_proxy": True,
+                    "validation_status": "NOT_CLINICALLY_VALIDATED",
+                }
+            )
+        return history
+
+    @staticmethod
+    def _build_chart_payload(history: List[Dict[str, Any]]) -> Dict[str, Any]:
+        points = [
+            {
+                "prediction_id": h["prediction_id"],
+                "date": h["assessment_date"],
+                "model_confidence_raw": h["model_confidence_raw"],
+                "predicted_class_index": h["predicted_class_index"],
+                "predicted_proxy_class": h["predicted_proxy_class"],
+            }
+            for h in history
+            if h.get("assessment_date") is not None
+        ]
+        count = len(points)
+        trend_supported = count >= 2
+        return {
+            "timeline_points": points,
+            "assessment_count": count,
+            "trend_supported": trend_supported,
+            "trend_message": (
+                "Multiple stored assessments are available for timeline and confidence charts."
+                if trend_supported
+                else "Only one stored assessment exists; trend charts are not meaningful yet."
+            ),
+            "confidence_axis_label": "Model confidence (uncalibrated, not disease probability)",
+            "class_axis_label": "Research proxy class (NORM vs MI/STTC)",
+        }
+
+    @staticmethod
     async def get_diagnosis(
         db: AsyncSession,
         patient: Patient,
@@ -245,42 +438,63 @@ class PatientService:
         
         Never fabricates predictions, risk scores, or treatment recommendations.
         Strictly distinguishes individual model confidence from model accuracy.
+        Writes an audit log entry for diagnosis access.
         """
-        stmt = (
-            select(DiagnosisPrediction)
-            .where(DiagnosisPrediction.patient_id == patient.id)
-            .order_by(DiagnosisPrediction.created_at.desc())
-        )
-        res = await db.execute(stmt)
-        prediction = res.scalar_one_or_none()
+        hosp_assoc_stmt = select(PatientHospitalAssociation).where(
+            PatientHospitalAssociation.patient_id == patient.id
+        ).limit(1)
+        hosp_assoc = (await db.execute(hosp_assoc_stmt)).scalar_one_or_none()
+        audit_hospital_id = hosp_assoc.hospital_id if hosp_assoc else None
 
-        if not prediction:
+        await AuditWriter.write(
+            db,
+            event_type="PATIENT_DIAGNOSIS_ACCESS",
+            resource_type="DiagnosisPrediction",
+            outcome="SUCCESS",
+            actor_id=patient.user_id,
+            hospital_id=audit_hospital_id,
+            resource_id=str(patient.id),
+        )
+
+        caps = get_patient_portal_capabilities()
+        ai_cap = caps.get("ai_assisted_assessment", "NOT_ENABLED")
+        history = await PatientService._load_prediction_history(db, patient.id)
+        latest = history[-1] if history else None
+
+        if not latest:
+            empty_status = "NOT_ENABLED" if ai_cap == "NOT_ENABLED" else "NO_DATA"
             return {
                 "status": "NO_DATA",
-                "assessment_status": "NOT_ENABLED",
+                "assessment_status": empty_status,
+                "inference_capability": ai_cap,
                 "prediction": None,
-                "message": "AI-assisted assessment is not currently available.",
+                "history": [],
+                "charts": PatientService._build_chart_payload([]),
+                "message": (
+                    "No stored assessment results exist for your account yet."
+                    if empty_status == "NO_DATA"
+                    else "AI-assisted assessment is not enabled for new evaluations in this environment."
+                ),
                 "safety_wording": ASSESSMENT_UNAVAILABLE_DISCLAIMER,
+                "validation_notice": RESEARCH_PROXY_VALIDATION_NOTICE,
+                "model_confidence_explainer": MODEL_CONFIDENCE_EXPLAINER,
+                "proxy_class_explainer": PROXY_CLASS_EXPLAINER,
                 "explanation_status": "NOT_IMPLEMENTED",
                 "causal_status": "NOT_IMPLEMENTED",
             }
 
-        confidence_val = None
-        if prediction.confidence is not None:
-            confidence_val = f"{prediction.confidence * 100:.1f}%"
-
         return {
             "status": "AVAILABLE",
-            "assessment_status": "AVAILABLE",
-            "prediction": {
-                "prediction_id": str(prediction.id),
-                "assessment_target": prediction.target_definition,
-                "assessment_date": prediction.created_at.isoformat() if prediction.created_at else None,
-                "model_confidence": confidence_val,
-                "status": prediction.status,
-            },
+            "assessment_status": "RESULTS_ON_FILE",
+            "inference_capability": ai_cap,
+            "prediction": latest,
+            "history": history,
+            "charts": PatientService._build_chart_payload(history),
             "message": None,
             "safety_wording": MANDATORY_SAFETY_DISCLAIMER,
+            "validation_notice": RESEARCH_PROXY_VALIDATION_NOTICE,
+            "model_confidence_explainer": MODEL_CONFIDENCE_EXPLAINER,
+            "proxy_class_explainer": PROXY_CLASS_EXPLAINER,
             "explanation_status": "NOT_IMPLEMENTED",
             "causal_status": "NOT_IMPLEMENTED",
         }

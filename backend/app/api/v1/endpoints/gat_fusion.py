@@ -6,13 +6,15 @@ import uuid
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, Query, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.dependencies import (
-    get_current_user,
+    get_db,
     require_role,
 )
 from backend.app.core.security import UserRole
 from backend.app.models.identity import User
+from backend.app.services.patient_inference_auth import authorize_patient_linked_inference
 from backend.app.schemas.gat_fusion import (
     GATFusionEvaluateRequest,
     GATFusionEvaluateResponse,
@@ -49,8 +51,9 @@ async def evaluate_gat_fusion(
     body: GATFusionEvaluateRequest,
     patient_id: Optional[uuid.UUID] = Query(
         None,
-        description="Optional patient UUID for provenance annotation (no DB write performed by this endpoint).",
+        description="Optional assigned patient UUID; persists DiagnosisPrediction when authorized.",
     ),
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(
         require_role(UserRole.CLINICIAN, UserRole.HOSPITAL_ADMIN, UserRole.SUPER_ADMIN)
     ),
@@ -58,8 +61,27 @@ async def evaluate_gat_fusion(
     """
     Requires both 128-d embeddings from the authorized ECG-report encoder stack.
     Enabled only when FUSION_INFERENCE_ENABLED=true and a trained GAT checkpoint is deployed.
+
+    - With patient_id: role-checked persistence (super admin, hospital admin scope, clinician assignment).
+    - Without patient_id: research-only proxy evaluation; no patient health record write.
     """
-    return await GATFusionService.evaluate(
+    target_patient = None
+    target_profile = None
+    persist_hospital_id = None
+
+    if patient_id is not None:
+        ctx = await authorize_patient_linked_inference(db, current_user, patient_id)
+        target_patient = ctx.patient
+        target_profile = ctx.profile
+        persist_hospital_id = ctx.hospital_id
+
+    result = await GATFusionService.evaluate(
+        db,
         body=body,
-        patient_id=patient_id,
+        profile=target_profile,
+        patient=target_patient,
+        hospital_id=persist_hospital_id,
     )
+    if target_patient:
+        await db.commit()
+    return result

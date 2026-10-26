@@ -49,6 +49,7 @@ from backend.app.models.audit import (
     SecurityEvent,
     SystemHealthSnapshot,
 )
+from backend.app.models.messaging import PatientClinicianQuestion
 
 __all__ = [
     "Base",
@@ -87,4 +88,5 @@ __all__ = [
     "SystemHealthSnapshot",
     "DataQualityEvent",
     "HospitalAlert",
+    "PatientClinicianQuestion",
 ]

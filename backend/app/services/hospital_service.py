@@ -13,9 +13,10 @@ import uuid
 from typing import Dict, Any, Optional, List
 from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, text
+from sqlalchemy import case, select, func, text
 
 from backend.app.models.identity import Hospital, HospitalMembership, ClinicianProfile, User, UserSession
+from backend.app.utils.patient_reference_display import enrich_patient_list_entry
 from backend.app.models.patient import Patient, PatientHospitalAssociation
 from backend.app.models.clinical import MedicalDocument, PrivacyMaskingResult
 from backend.app.models.federated import FederatedClient, FederatedClientUpdate
@@ -305,24 +306,31 @@ class HospitalService:
 
         patients_list = []
         if total_count > 0:
+            demo_first = case(
+                (Patient.opaque_patient_id.like("DEMO-SYNTH-%"), 0),
+                else_=1,
+            )
             stmt = (
                 select(PatientHospitalAssociation, Patient)
                 .join(Patient, PatientHospitalAssociation.patient_id == Patient.id)
                 .where(PatientHospitalAssociation.hospital_id == hosp_id)
-                .order_by(PatientHospitalAssociation.created_at.desc())
+                .order_by(demo_first, Patient.opaque_patient_id.asc())
                 .limit(limit)
                 .offset(offset)
             )
             res = await db.execute(stmt)
             for assoc, pat in res.all():
-                patients_list.append({
-                    "id": str(assoc.id),
-                    "patient_id": str(pat.id),
-                    "opaque_patient_id": pat.opaque_patient_id,
-                    "hospital_ref_hash": assoc.hospital_patient_ref_hash,
-                    "created_at": safe_isoformat(assoc.created_at),
-                    "updated_at": safe_isoformat(assoc.updated_at),
-                })
+                patients_list.append(
+                    enrich_patient_list_entry(
+                        patient_id=str(pat.id),
+                        opaque_patient_id=pat.opaque_patient_id,
+                        hospital_code=hospital.code,
+                        id=str(assoc.id),
+                        hospital_ref_hash=assoc.hospital_patient_ref_hash,
+                        created_at=safe_isoformat(assoc.created_at),
+                        updated_at=safe_isoformat(assoc.updated_at),
+                    )
+                )
 
         return {
             "status": "AVAILABLE" if patients_list else "NO_DATA",

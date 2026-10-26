@@ -29,7 +29,9 @@ import {
   apiGetGatFusionReadiness,
   generateUUID,
   ApiError,
+  apiRequest,
 } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 import {
   buildGatFusionPayload,
   resolvePredictionScore,
@@ -43,7 +45,15 @@ import {
   SAMPLE_REPORTS,
 } from '../utils/sampleData';
 
+import {
+  formatPatientOptionLabel,
+  partitionPatientOptions,
+  resolvePatientUuid,
+} from '../utils/patientReferenceDisplay';
+
 export function DiagnosticWorkspace({ assignedPatients = [], onPredictionComplete }) {
+  const { user, roles } = useAuth();
+  const [fetchedPatients, setFetchedPatients] = useState([]);
   // Workflow mode: 'ecg_report' | 'gat_fusion'
   const [workflow, setWorkflow] = useState('ecg_report');
 
@@ -109,6 +119,36 @@ export function DiagnosticWorkspace({ assignedPatients = [], onPredictionComplet
   useEffect(() => {
     checkReadiness();
   }, [checkReadiness]);
+
+  const patientOptions =
+    assignedPatients.length > 0 ? assignedPatients : fetchedPatients;
+  const { demo: demoPatientOptions, other: otherPatientOptions } =
+    partitionPatientOptions(patientOptions);
+
+  useEffect(() => {
+    if (assignedPatients.length > 0) {
+      return undefined;
+    }
+    let cancelled = false;
+    async function loadAuthorizedPatients() {
+      try {
+        const roleSet = new Set(roles || []);
+        if (user?.is_super_admin || roleSet.has('SUPER_ADMIN') || roleSet.has('CLINICIAN')) {
+          const data = await apiRequest('/api/v1/clinician/patients?limit=100&offset=0');
+          if (!cancelled) setFetchedPatients(data.patients || []);
+        } else if (roleSet.has('HOSPITAL_ADMIN')) {
+          const data = await apiRequest('/api/v1/hospital/patients?limit=100&offset=0');
+          if (!cancelled) setFetchedPatients(data.patients || []);
+        }
+      } catch (err) {
+        console.warn('Diagnostic Studio: unable to load authorized patient list', err);
+      }
+    }
+    loadAuthorizedPatients();
+    return () => {
+      cancelled = true;
+    };
+  }, [assignedPatients.length, user?.is_super_admin, roles]);
 
   useEffect(() => {
     setSubmitError(null);
@@ -865,11 +905,36 @@ export function DiagnosticWorkspace({ assignedPatients = [], onPredictionComplet
                 style={{ fontSize: '0.8125rem', padding: '0.35rem 0.6rem', minWidth: '220px' }}
               >
                 <option value="">Research Proxy (No Patient Linked)</option>
-                {assignedPatients.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.opaque_patient_id} ({p.gender || 'Patient'})
-                  </option>
-                ))}
+                {demoPatientOptions.length > 0 && (
+                  <optgroup label="Demo synthetic cohort (seed)">
+                    {demoPatientOptions.map((p) => {
+                      const pid = resolvePatientUuid(p);
+                      return (
+                        <option key={pid} value={pid} title={pid}>
+                          {formatPatientOptionLabel(p)}
+                        </option>
+                      );
+                    })}
+                  </optgroup>
+                )}
+                {otherPatientOptions.length > 0 && (
+                  <optgroup
+                    label={
+                      demoPatientOptions.length > 0
+                        ? 'Other authorized patient references'
+                        : 'Authorized patient references'
+                    }
+                  >
+                    {otherPatientOptions.map((p) => {
+                      const pid = resolvePatientUuid(p);
+                      return (
+                        <option key={pid} value={pid} title={pid}>
+                          {formatPatientOptionLabel(p)}
+                        </option>
+                      );
+                    })}
+                  </optgroup>
+                )}
               </select>
             </div>
 

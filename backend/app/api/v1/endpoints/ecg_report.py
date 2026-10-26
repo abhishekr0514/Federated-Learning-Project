@@ -4,19 +4,16 @@ import uuid
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, Query, status
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.dependencies import (
     get_current_clinician_context,
-    get_current_user,
     get_db,
     require_role,
 )
-from backend.app.core.errors import ForbiddenError, NotFoundError
 from backend.app.core.security import UserRole
-from backend.app.models.identity import ClinicianProfile, User
-from backend.app.models.patient import Patient, PatientClinicianAssignment
+from backend.app.models.identity import User
+from backend.app.services.patient_inference_auth import authorize_patient_linked_inference
 from backend.app.schemas.ecg_report_inference import (
     ECGReportEmbedRequest,
     ECGReportEmbedResponse,
@@ -81,35 +78,15 @@ async def evaluate_ecg_report(
     - If patient_id is omitted, performs research-only proxy evaluation without
       persisting patient health records.
     """
-    target_patient: Optional[Patient] = None
-    target_profile: Optional[ClinicianProfile] = None
+    target_patient = None
+    target_profile = None
+    persist_hospital_id = None
 
     if patient_id is not None:
-        # 1. Resolve clinician profile
-        stmt_prof = select(ClinicianProfile).where(ClinicianProfile.user_id == current_user.id)
-        res_prof = await db.execute(stmt_prof)
-        target_profile = res_prof.scalar_one_or_none()
-
-        if not current_user.is_super_admin and not target_profile:
-            raise ForbiddenError("Active Clinician Profile required for patient-associated evaluation.")
-
-        # 2. Resolve patient and verify assignment
-        stmt_patient = select(Patient).where(Patient.id == patient_id)
-        res_patient = await db.execute(stmt_patient)
-        target_patient = res_patient.scalar_one_or_none()
-
-        if not target_patient:
-            raise NotFoundError("Patient reference resource not accessible")
-
-        if not current_user.is_super_admin and target_profile:
-            stmt_assign = select(PatientClinicianAssignment).where(
-                PatientClinicianAssignment.patient_id == patient_id,
-                PatientClinicianAssignment.clinician_id == target_profile.id,
-                PatientClinicianAssignment.hospital_id == target_profile.hospital_id,
-            )
-            res_assign = await db.execute(stmt_assign)
-            if not res_assign.scalar_one_or_none():
-                raise NotFoundError("Patient reference resource not accessible")
+        ctx = await authorize_patient_linked_inference(db, current_user, patient_id)
+        target_patient = ctx.patient
+        target_profile = ctx.profile
+        persist_hospital_id = ctx.hospital_id
 
     result = await ECGReportInferenceService.evaluate(
         db,
@@ -117,6 +94,7 @@ async def evaluate_ecg_report(
         user=current_user,
         profile=target_profile,
         patient=target_patient,
+        hospital_id=persist_hospital_id,
     )
     if target_patient and db:
         await db.commit()

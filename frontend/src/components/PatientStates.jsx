@@ -20,6 +20,10 @@ export function PatientStatusBadge({ status }) {
     NO_DATA: { label: 'No Records', className: 'badge-neutral' },
     NOT_ENABLED: { label: 'Not Available', className: 'badge-warning' },
     NOT_IMPLEMENTED: { label: 'In Development', className: 'badge-secondary' },
+    RESULTS_ON_FILE: { label: 'Results on file', className: 'badge-success' },
+    CONFIGURATION_REQUIRED: { label: 'Setup needed', className: 'badge-warning' },
+    MISSING_DEPENDENCY: { label: 'Deps missing', className: 'badge-warning' },
+    UNAVAILABLE: { label: 'Unavailable', className: 'badge-warning' },
     FORBIDDEN: { label: 'Restricted', className: 'badge-danger' },
     ERROR: { label: 'Error', className: 'badge-danger' },
   };

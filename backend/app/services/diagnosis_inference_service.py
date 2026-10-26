@@ -15,6 +15,7 @@ from backend.app.models.identity import ClinicianProfile, User
 from backend.app.models.ml_models import DiagnosisPrediction, ModelVersion
 from backend.app.models.patient import Patient
 from backend.app.schemas.diagnosis_inference import DiagnosisEvaluateRequest, DiagnosisEvaluateResponse
+from backend.app.services.prediction_proxy_class import gat_idempotent_replay_class
 from ml.inference.fusion_runtime import get_fusion_inference_runtime
 from ml.inference.setup_diagnostics import build_next_steps, environment_summary
 
@@ -121,6 +122,7 @@ class DiagnosisInferenceService:
             prediction_type=result["prediction_type"],
             provenance=provenance,
             confidence=float(result["confidence_uncalibrated"]),
+            predicted_class_index=int(result["predicted_class_index"]),
             status="evaluated",
         )
         db.add(prediction)
@@ -179,6 +181,7 @@ class DiagnosisInferenceService:
 
     @staticmethod
     def _to_response(row: DiagnosisPrediction) -> DiagnosisEvaluateResponse:
+        class_idx, _label = gat_idempotent_replay_class(row.predicted_class_index)
         return DiagnosisEvaluateResponse(
             status="EVALUATED",
             prediction_id=row.id,
@@ -187,6 +190,6 @@ class DiagnosisInferenceService:
             prediction_type=row.prediction_type,
             model_version_tag="unknown",
             confidence_uncalibrated=row.confidence or 0.0,
-            predicted_class_index=-1,
+            predicted_class_index=class_idx,
             disclaimer="Returned from idempotent replay; class index not re-materialized.",
         )
