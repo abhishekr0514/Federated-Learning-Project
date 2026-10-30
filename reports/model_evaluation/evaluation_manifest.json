@@ -1,0 +1,74 @@
+{
+  "generated_at_utc": "2026-10-27T04:14:32.255677+00:00",
+  "repo_root": "C:\\Federated-Learning-Project",
+  "output_dir": "C:\\Federated-Learning-Project\\reports\\model_evaluation",
+  "class_mapping": {
+    "0": "NORM",
+    "1": "MI/STTC"
+  },
+  "positive_class": {
+    "index": 1,
+    "label": "MI/STTC"
+  },
+  "random_seed_config": 42,
+  "software": {
+    "python": "3.10.11",
+    "platform": "Windows-10-10.0.26300-SP0",
+    "sklearn": "1.7.2",
+    "torch": "2.11.0+cpu",
+    "numpy": "2.2.6"
+  },
+  "dataset": {
+    "bundle_path": "C:\\Federated-Learning-Project\\data\\processed\\gat_ecg_report\\federated_fl_bundle.pt",
+    "split": "test (precomputed embeddings from PTB-XL test fold per bundle meta)",
+    "smoke_caps": {
+      "max_train": null,
+      "max_test": null
+    },
+    "split_counts": {
+      "train_eligible_full_split": 12898,
+      "test_eligible_full_split": 1838,
+      "train_in_bundle": 1500,
+      "test_in_bundle": 1838
+    },
+    "test_split_mode": "full",
+    "split_policy": {
+      "protocol_version": "1.0.0",
+      "train_folds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "validation_folds": [
+        8
+      ],
+      "test_folds": [
+        10
+      ],
+      "unused_folds": [
+        9
+      ],
+      "selection_metric": "val_auroc",
+      "test_fold_never_for_selection": true
+    },
+    "target_definition": "PTB-XL proxy: NORM (0) vs MI/STTC (1). NOT validated clinical heart-disease diagnosis."
+  },
+  "models": {
+    "gat_centralized": {
+      "checkpoint": "C:\\Federated-Learning-Project\\models\\gat_ecg_report\\best_gat_checkpoint.pt",
+      "role": "centralized_gat_ecg_report_fusion"
+    },
+    "gat_federated_global": {
+      "checkpoint": "C:\\Federated-Learning-Project\\data\\processed\\federated\\gat_ecg_report_runs\\6d5241aa-1902-434d-b0ed-b7d62263bb76\\global_federated_checkpoint.pt",
+      "selection_note": "newest global_federated_checkpoint.pt by mtime under gat_ecg_report_runs/",
+      "role": "fedavg_global_head_over_frozen_embeddings"
+    }
+  },
+  "comparable_examples": true,
+  "research_disclaimer": "PTB-XL proxy classification (NORM vs MI/STTC) is for research demonstration only. Not clinically validated diagnosis.",
+  "generation_errors": []
+}

@@ -155,13 +155,17 @@ class AdminService:
 
     @staticmethod
     async def get_metrics_overview() -> Dict[str, Any]:
-        """Return model performance metrics."""
-        return {
-            "status": "NO_DATA",
-            "message": "No production model metrics evaluation recorded. (Zero Mock Data Contract Enforced).",
-            "proxy_experiment_note": "Historical PTB-XL proxy task evaluated normal sinus rhythm vs superclasses.",
-            "metrics": None
-        }
+        """Return offline GAT evaluation metrics from reports/model_evaluation/ when present."""
+        from backend.app.services.offline_evaluation_metrics_service import (
+            load_offline_gat_evaluation_summary,
+        )
+
+        summary = load_offline_gat_evaluation_summary()
+        if summary.get("status") == "AVAILABLE":
+            summary["proxy_experiment_note"] = (
+                "PTB-XL proxy hold-out evaluation (NORM vs MI/STTC). Not clinical validation."
+            )
+        return summary
 
     @staticmethod
     async def get_privacy_metrics() -> Dict[str, Any]:

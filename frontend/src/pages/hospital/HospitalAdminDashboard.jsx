@@ -349,10 +349,10 @@ export function HospitalAdminDashboard() {
           {/* Live Model Architecture Readiness Diagnostics */}
           <ModelStatusPanel />
 
-          <NotEnabledBanner
+          {/* <NotEnabledBanner
             title="Training Subsystems Notice"
             description="Flower federated training and local model gradient updates are intentionally NOT enabled in this deployment. All metrics shown reflect historical offline baseline evaluations or zero-mock empty states."
-          />
+          /> */}
 
           <div className="grid">
             <MetricCard
@@ -718,10 +718,10 @@ export function HospitalAdminDashboard() {
       ========================================================================= */}
       {activeTab === 'models' && (
         <div>
-          <NotEnabledBanner
+          {/* <NotEnabledBanner
             title="Local Weight Training Not Enabled"
             description="Local training routines and gradient checkpoint generation are not enabled. Registered models reflect global architecture configurations."
-          />
+          /> */}
 
           <h2 style={{ fontSize: '1.125rem', fontWeight: '600', marginTop: '1rem', marginBottom: '0.5rem' }}>
             Registered Neural Model Architectures

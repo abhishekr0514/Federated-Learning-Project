@@ -71,7 +71,6 @@ V1_GET_501_ENDPOINTS = [
     "/api/v1/clinicians/dashboard",
     "/api/v1/documents/",
     "/api/v1/federated/rounds",
-    "/api/v1/metrics/evaluation",
     "/api/v1/audit/",
 ]
 

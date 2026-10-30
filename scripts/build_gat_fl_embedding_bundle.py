@@ -30,8 +30,23 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Build GAT FL embedding bundle (frozen encoder outputs)")
     parser.add_argument("--ptbxl-root", type=Path, default=PTBXL_ROOT)
     parser.add_argument("--out", type=Path, default=DEFAULT_BUNDLE_PATH)
-    parser.add_argument("--max-train", type=int, default=None, help="Cap train records (smoke/dev only)")
-    parser.add_argument("--max-test", type=int, default=None, help="Cap test records (smoke/dev only)")
+    parser.add_argument(
+        "--max-train",
+        type=int,
+        default=None,
+        help="Optional cap on train records after split (smoke/dev only). Omit for full train split.",
+    )
+    parser.add_argument(
+        "--max-test",
+        type=int,
+        default=None,
+        help="Optional cap on test records after split (smoke/dev only). Omit for full fold-10 test.",
+    )
+    parser.add_argument(
+        "--full-test",
+        action="store_true",
+        help="Use the entire held-out test split (fold 10). Mutually exclusive with --max-test.",
+    )
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--device", default="cpu")
     parser.add_argument(
@@ -41,6 +56,12 @@ def main() -> int:
         help="embedding_cache_train.pt from a prior centralized GAT run (skips re-encoding train rows)",
     )
     args = parser.parse_args()
+
+    if args.full_test and args.max_test is not None:
+        print("BLOCKER: use either --full-test or --max-test, not both", file=sys.stderr)
+        return 2
+    max_train_cap = args.max_train
+    max_test_cap = None if args.full_test else args.max_test
 
     if not args.ptbxl_root.is_dir():
         print(f"BLOCKER: PTB-XL root missing: {args.ptbxl_root}", file=sys.stderr)
@@ -56,10 +77,12 @@ def main() -> int:
     parts = partition_records(records)
     train_recs = parts["train"]
     test_recs = parts["test"]
-    if args.max_train:
-        train_recs = train_recs[: args.max_train]
-    if args.max_test:
-        test_recs = test_recs[: args.max_test]
+    test_recs_full_count = len(test_recs)
+    train_recs_full_count = len(train_recs)
+    if max_train_cap:
+        train_recs = train_recs[:max_train_cap]
+    if max_test_cap:
+        test_recs = test_recs[:max_test_cap]
 
     encoder_model, pipe, _enc_norm, enc_manifest = load_encoder_bundle(device)
     norm = fit_train_normalization(args.ptbxl_root, parts["train"], None)
@@ -69,11 +92,11 @@ def main() -> int:
         train_ecg, train_text, train_y = cache["train"]
         n_train = int(train_y.size(0))
         train_recs = train_recs[:n_train]
-        if args.max_train:
-            train_ecg = train_ecg[: args.max_train]
-            train_text = train_text[: args.max_train]
-            train_y = train_y[: args.max_train]
-            train_recs = train_recs[: args.max_train]
+        if max_train_cap:
+            train_ecg = train_ecg[:max_train_cap]
+            train_text = train_text[:max_train_cap]
+            train_y = train_y[:max_train_cap]
+            train_recs = train_recs[:max_train_cap]
     else:
         train_ecg, train_text, train_y = extract_embeddings(
             encoder_model, pipe, norm, train_recs, args.ptbxl_root, device, args.batch_size
@@ -94,7 +117,14 @@ def main() -> int:
         "target_definition": (
             "PTB-XL proxy: NORM (0) vs MI/STTC (1). NOT validated clinical heart-disease diagnosis."
         ),
-        "smoke_caps": {"max_train": args.max_train, "max_test": args.max_test},
+        "split_counts": {
+            "train_eligible_full_split": train_recs_full_count,
+            "test_eligible_full_split": test_recs_full_count,
+            "train_in_bundle": len(train_recs),
+            "test_in_bundle": len(test_recs),
+        },
+        "test_split_mode": "full" if max_test_cap is None else "capped",
+        "smoke_caps": {"max_train": max_train_cap, "max_test": max_test_cap},
     }
     build_bundle_from_tensors(
         train_ecg=train_ecg,

@@ -69,7 +69,13 @@ class DocumentIngestionService:
                     raise ValidationError("No active hospital node found in system.")
                 hospital_id = hosp.id
 
-        # 1. Authorize patient association if provided
+        # patient_id is required: medical_documents.patient_id is NOT NULL in PostgreSQL.
+        if not patient_id:
+            raise ValidationError(
+                "patient_id is required. Select an assigned patient before uploading a clinical document."
+            )
+
+        # 1. Authorize patient association
         patient = None
         if patient_id:
             stmt = select(Patient).where(Patient.id == patient_id)
@@ -125,12 +131,12 @@ class DocumentIngestionService:
             content=content,
         )
 
-        initial_status = "UPLOADED" if patient else "PATIENT_ASSOCIATION_REQUIRED"
+        initial_status = "UPLOADED"
 
         # 5. Persist MedicalDocument & DocumentVersion
         doc = MedicalDocument(
             id=doc_id,
-            patient_id=patient.id if patient else None,
+            patient_id=patient.id,
             hospital_id=hospital_id,
             local_document_uri=local_uri,
             document_type="UNKNOWN",

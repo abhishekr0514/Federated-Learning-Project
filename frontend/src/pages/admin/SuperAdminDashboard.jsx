@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { AdminLayout } from '../../layouts/AdminLayout';
 import { FeatureNotImplemented } from '../../components/ErrorStates';
+import { GlobalEvaluationMetricsPanel } from '../../components/admin/GlobalEvaluationMetricsPanel';
 import { GatFederatedResearchPanel } from '../../components/admin/GatFederatedResearchPanel';
 import { TabularFederatedResearchPanel } from '../../components/admin/TabularFederatedResearchPanel';
 import { ModelStatusPanel } from '../../components/ModelStatusPanel';
@@ -277,11 +278,15 @@ export function SuperAdminDashboard() {
       )}
 
       {activeTab === 'metrics' && (
-        <FeatureNotImplemented
-          title="Global System Metrics & ROC-AUC"
-          moduleName="Global Evaluation Metrics"
-          description="System ROC-AUC curves, sensitivity, and cross-institution validation metrics are disabled to prevent metric fabrication."
-        />
+        <div>
+          <div className="card" style={{ marginBottom: '1rem' }}>
+            <h2 style={{ fontSize: '1.125rem', fontWeight: 600, margin: 0 }}>Global System Metrics & ROC-AUC</h2>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', margin: '0.35rem 0 0' }}>
+              Offline held-out PTB-XL proxy evaluation (centralized vs federated GAT). Not live hospital clinical validation.
+            </p>
+          </div>
+          <GlobalEvaluationMetricsPanel />
+        </div>
       )}
 
       {activeTab === 'security' && (

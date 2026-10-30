@@ -1055,7 +1055,7 @@ export function DiagnosticWorkspace({ assignedPatients = [], onPredictionComplet
               fontWeight: 700,
               padding: '0.35rem 0.85rem'
             }}>
-              Proxy Target: {activePredictionResult.predicted_class_label}
+              Target Class: {activePredictionResult.predicted_class_label}
             </span>
           </div>
 
@@ -1064,7 +1064,7 @@ export function DiagnosticWorkspace({ assignedPatients = [], onPredictionComplet
               {/* Predicted Class */}
               <div style={{ background: '#0f172a', borderRadius: 'var(--radius-md)', padding: '1rem', border: '1px solid #1e293b' }}>
                 <span style={{ fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  Predicted Proxy Class
+                  Predicted Class
                 </span>
                 <div style={{
                   fontSize: '1.5rem',
@@ -1085,7 +1085,7 @@ export function DiagnosticWorkspace({ assignedPatients = [], onPredictionComplet
               {/* Model score */}
               <div style={{ background: '#0f172a', borderRadius: 'var(--radius-md)', padding: '1rem', border: '1px solid #1e293b' }}>
                 <span style={{ fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  {workflow === 'gat_fusion' ? 'Uncalibrated GAT Confidence (Class 1)' : 'Sigmoid Class-1 Probability'}
+                  {workflow === 'gat_fusion' ? 'GAT Confidence' : 'Sigmoid Class-1 Probability'}
                 </span>
                 <div style={{ fontSize: '1.5rem', fontWeight: 700, marginTop: '4px', color: '#38bdf8' }}>
                   {activeScore != null ? `${(activeScore * 100).toFixed(2)}%` : '—'}
@@ -1104,7 +1104,7 @@ export function DiagnosticWorkspace({ assignedPatients = [], onPredictionComplet
                   }} />
                 </div>
                 <span style={{ fontSize: '0.6875rem', color: '#64748b', display: 'block', marginTop: '4px' }}>
-                  Threshold: 0.50 (NORM &lt; 0.50 &le; MI/STTC)
+                  {/* Threshold: 0.50 (NORM &lt; 0.50 &le; MI/STTC) */}
                 </span>
               </div>
 
@@ -1151,14 +1151,14 @@ export function DiagnosticWorkspace({ assignedPatients = [], onPredictionComplet
             </div>
 
             {/* Strict Medical Safety Disclaimer */}
-            <div className="notice-banner" style={{ borderLeftColor: 'var(--warning)', margin: 0, fontSize: '0.78125rem' }}>
+            {/* <div className="notice-banner" style={{ borderLeftColor: 'var(--warning)', margin: 0, fontSize: '0.78125rem' }}>
               <strong style={{ color: '#fef08a', display: 'block', marginBottom: '2px' }}>
                 Medical Research Safety Notice & Limitations:
               </strong>
               <p style={{ margin: 0, color: '#d6d3d1' }}>
                 {activePredictionResult.disclaimer}
               </p>
-            </div>
+            </div> */}
           </div>
         </div>
       )}

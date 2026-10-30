@@ -78,9 +78,12 @@ class DocumentValidator:
 
         format_spec = ALLOWED_FORMATS[ext]
 
-        # 2. MIME Type Check
+        # 2. MIME Type Check (browsers often send application/octet-stream for PDF uploads)
         clean_mime = (content_type or "").lower().split(";")[0].strip()
-        if clean_mime not in format_spec["mimes"]:
+        allowed_mimes = list(format_spec["mimes"])
+        if ext == ".pdf" and "application/octet-stream" not in allowed_mimes:
+            allowed_mimes.append("application/octet-stream")
+        if clean_mime not in allowed_mimes:
             raise ValidationError(
                 f"MIME type '{clean_mime}' does not match allowed types for extension '{ext}'."
             )

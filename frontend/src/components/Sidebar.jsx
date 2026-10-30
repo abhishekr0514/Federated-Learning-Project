@@ -148,7 +148,7 @@ export function Sidebar({ isOpen, activeTab, onSelectTab, role, patientPortalBad
         items: [
           { id: 'federated', label: 'Federated Node', icon: Radio, badge: cb?.flower || '…' },
           { id: 'diagnosis', label: 'GAT Diagnosis', icon: Activity, badge: cb?.gat || '…' },
-          { id: 'explanations', label: 'DiCE Explanations', icon: Cpu, badge: cb?.dice || '…' },
+          // { id: 'explanations', label: 'DiCE Explanations', icon: Cpu, badge: cb?.dice || '…' },
           { id: 'causal', label: 'DoWhy Causal AI', icon: BarChart3, badge: cb?.dowhy || '…' },
         ],
       },

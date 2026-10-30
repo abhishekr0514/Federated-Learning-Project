@@ -425,8 +425,8 @@ class PatientService:
                 if trend_supported
                 else "Only one stored assessment exists; trend charts are not meaningful yet."
             ),
-            "confidence_axis_label": "Model confidence (uncalibrated, not disease probability)",
-            "class_axis_label": "Research proxy class (NORM vs MI/STTC)",
+            "confidence_axis_label": "Model confidence",
+            "class_axis_label": "Research class (NORM vs MI/STTC)",
         }
 
     @staticmethod

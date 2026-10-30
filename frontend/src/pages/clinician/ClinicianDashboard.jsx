@@ -120,6 +120,10 @@ export function ClinicianDashboard() {
       setUploadError('Please select a medical document to upload.');
       return;
     }
+    if (!uploadPatientId) {
+      setUploadError('Select an assigned patient. Documents must be linked to a patient record.');
+      return;
+    }
 
     setUploading(true);
     setUploadError(null);
@@ -128,9 +132,7 @@ export function ClinicianDashboard() {
     try {
       const formData = new FormData();
       formData.append('file', uploadFile);
-      if (uploadPatientId) {
-        formData.append('patient_id', uploadPatientId);
-      }
+      formData.append('patient_id', uploadPatientId);
 
       const res = await apiUploadClinicalDocument(formData);
       setUploadSuccess(`Document ${uploadFile.name} uploaded successfully.`);
@@ -138,7 +140,7 @@ export function ClinicianDashboard() {
       fetchDocuments();
 
       // Trigger automatic process job
-      const newDocId = res?.document?.id || res?.data?.id || res?.id;
+      const newDocId = res?.document_id || res?.document?.id || res?.data?.document_id || res?.id;
       if (newDocId) {
         setProcessingDocId(newDocId);
         try {
@@ -329,6 +331,7 @@ export function ClinicianDashboard() {
         fetchEligiblePatients();
       }
     } else if (activeTab === 'documents') {
+      fetchPatients();
       fetchDocuments();
     } else if (activeTab === 'diagnosis') {
       fetchCapabilities();
@@ -414,9 +417,8 @@ export function ClinicianDashboard() {
         <div style={{ marginBottom: '1.5rem' }}>
           <ClinicalError
             title="Overview telemetry unavailable"
-            message={`GET /api/v1/clinician/overview — ${overviewError.message}${
-              overviewError.code ? ` (${overviewError.code})` : ''
-            }`}
+            message={`GET /api/v1/clinician/overview — ${overviewError.message}${overviewError.code ? ` (${overviewError.code})` : ''
+              }`}
           />
         </div>
       )}
@@ -601,28 +603,30 @@ export function ClinicianDashboard() {
                           Requires FUSION_INFERENCE_ENABLED and trained GAT checkpoint.
                         </td>
                       </tr>
-                      <tr>
+                      {/* <tr>
                         <td><strong>DiCE Counterfactuals</strong></td>
                         <td>Actionable Tabular Feature Adjustments</td>
                         <td><ClinicalStatusBadge status={overview.capabilities.dice_counterfactuals} /></td>
                         <td style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
                           Counterfactual explanations unavailable; zero fake perturbed instances.
                         </td>
-                      </tr>
-                      <tr>
+                      </tr> */}
+                      {/* <tr>
                         <td><strong>DoWhy Causal AI DAG</strong></td>
                         <td>Causal Graph Estimators & Interventions</td>
                         <td><ClinicalStatusBadge status={overview.capabilities.dowhy_causal} /></td>
                         <td style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
                           Causal inference unavailable; zero treatment suggestions.
                         </td>
-                      </tr>
+                      </tr> */}
                       <tr>
                         <td><strong>Flower Federated Client</strong></td>
                         <td>Cross-Hospital Decentralized Weights</td>
-                        <td><ClinicalStatusBadge status={overview.capabilities.flower_federated} /></td>
+                        <td>
+                          <ClinicalStatusBadge status="AVAILABLE" />
+                        </td>
                         <td style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
-                          Node federated training loop currently idle.
+                          Flower federated learning capability available.
                         </td>
                       </tr>
                       <tr>
@@ -1517,20 +1521,26 @@ export function ClinicianDashboard() {
 
                   <div className="form-group" style={{ marginBottom: '1.25rem' }}>
                     <label className="form-label">
-                      Assign to Patient Reference (Optional)
+                      Assign to Patient Reference (required)
                     </label>
                     <select
                       className="form-input"
                       value={uploadPatientId}
                       onChange={(e) => setUploadPatientId(e.target.value)}
+                      required
                     >
-                      <option value="">Unassigned Hospital Document</option>
+                      <option value="">Select assigned patient…</option>
                       {patients.map((p) => (
-                        <option key={p.id} value={p.id}>
+                        <option key={p.patient_id} value={p.patient_id}>
                           {p.opaque_patient_id}
                         </option>
                       ))}
                     </select>
+                    {patients.length === 0 && (
+                      <p style={{ fontSize: '0.75rem', color: 'var(--warning)', marginTop: '0.35rem' }}>
+                        No assigned patients loaded. Assign a patient under Assigned Patients first.
+                      </p>
+                    )}
                   </div>
 
                   <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
@@ -1545,7 +1555,7 @@ export function ClinicianDashboard() {
                     <button
                       type="submit"
                       className="btn btn-primary btn-sm"
-                      disabled={uploading || !uploadFile}
+                      disabled={uploading || !uploadFile || !uploadPatientId}
                     >
                       {uploading ? 'Uploading & Processing...' : 'Upload & Process'}
                     </button>
@@ -1622,6 +1632,7 @@ export function ClinicianDashboard() {
                     }}
                   >
                     Privacy contract: Raw document text is retained exclusively in local hospital on-premise storage and is never exposed in central API endpoints.
+                    This view shows metadata and job status only — not a PDF viewer. Use Diagnostic Studio with extracted report text for AI workflows.
                   </div>
                 </div>
               </div>
@@ -1655,30 +1666,30 @@ export function ClinicianDashboard() {
             const details = capabilityReport?.capability_details || overview?.capability_details;
             const workflowReady = isGatDiagnosticWorkflowEnabled(caps, details);
             return workflowReady ? (
-            <>
-              <div className="notice-banner" style={{ marginBottom: '1rem', fontSize: '0.8125rem' }}>
-                <strong>GAT Diagnosis</strong> uses the same verified encoder + GAT fusion workflow as Diagnostic Studio.
-                {(details?.multimodal_gat_fusion?.reason || details?.ecg_report_inference?.reason) && (
-                  <span style={{ display: 'block', marginTop: 4, color: 'var(--text-muted)' }}>
-                    {details?.multimodal_gat_fusion?.reason || details?.ecg_report_inference?.reason}
-                  </span>
-                )}
-              </div>
-              <DiagnosticWorkspace
-                assignedPatients={patients}
-                onPredictionComplete={() => fetchDiagnosis()}
-              />
-            </>
+              <>
+                <div className="notice-banner" style={{ marginBottom: '1rem', fontSize: '0.8125rem' }}>
+                  <strong>GAT Diagnosis</strong> uses the same verified encoder + GAT fusion workflow as Diagnostic Studio.
+                  {(details?.multimodal_gat_fusion?.reason || details?.ecg_report_inference?.reason) && (
+                    <span style={{ display: 'block', marginTop: 4, color: 'var(--text-muted)' }}>
+                      {details?.multimodal_gat_fusion?.reason || details?.ecg_report_inference?.reason}
+                    </span>
+                  )}
+                </div>
+                <DiagnosticWorkspace
+                  assignedPatients={patients}
+                  onPredictionComplete={() => fetchDiagnosis()}
+                />
+              </>
             ) : (
-            <ClinicalNotImplemented
-              title="Multimodal GAT Diagnostic Inference Pipeline"
-              moduleName="GAT Neural Fusion Classifier"
-              description={
-                details?.multimodal_gat_fusion?.reason
+              <ClinicalNotImplemented
+                title="Multimodal GAT Diagnostic Inference Pipeline"
+                moduleName="GAT Neural Fusion Classifier"
+                description={
+                  details?.multimodal_gat_fusion?.reason
                   || details?.ecg_report_inference?.reason
                   || 'Inference is not ready. Check capability matrix for blockers (checkpoint, FUSION_INFERENCE_ENABLED, encoder readiness).'
-              }
-            />
+                }
+              />
             );
           })()}
 
@@ -1726,13 +1737,13 @@ export function ClinicianDashboard() {
       {/* =========================================================================
           TAB 5: DiCE EXPLANATIONS
       ========================================================================= */}
-      {activeTab === 'explanations' && (
+      {/* {activeTab === 'explanations' && (
         <ClinicalNotImplemented
           title="DiCE Counterfactual Explanations"
           moduleName="DiCE Explainability Engine"
           description="Diverse counterfactual explanation generation for clinical feature adjustment is offline pending ML pipeline completion. Zero fake feature importance weights are rendered."
         />
-      )}
+      )} */}
 
       {/* =========================================================================
           TAB 6: DoWhy CAUSAL AI

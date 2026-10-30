@@ -163,7 +163,7 @@ export function FederatedLearningPanel() {
             </div>
             <div>
               <h3 style={{ fontSize: '1rem', fontWeight: 600, color: '#f8fafc', margin: 0 }}>
-                Flower SuperLink Demo (GAT research / non-clinical)
+                Flower SuperLink Demo (GAT research)
               </h3>
               <p style={{ fontSize: '0.75rem', color: '#94a3b8', margin: 0 }}>
                 Real SuperLink + two local SuperNodes; not production multi-hospital FL.

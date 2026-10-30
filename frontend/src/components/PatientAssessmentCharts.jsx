@@ -35,7 +35,7 @@ function AssessmentHistorySection({ history, classAxisLabel }) {
   return (
     <>
       <p id="class-chart-desc" className="patient-assessment-charts__section" style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: '0 0 0.75rem' }}>
-        {classAxisLabel}. NORM = 0, MI/STTC = 1 in the PTB-XL research proxy task — not a clinical diagnosis.
+        {classAxisLabel}. NORM = 0, MI/STTC = 1 in the PTB-XL research task — not a clinical diagnosis.
       </p>
 
       <div className="patient-assessment-history-wrap patient-assessment-history-wrap--desktop">
@@ -170,10 +170,10 @@ export function PatientAssessmentCharts({ charts, history }) {
 
       <section className="card patient-assessment-charts__section" aria-labelledby="confidence-chart-title">
         <h3 id="confidence-chart-title" style={{ fontSize: '0.9375rem', margin: '0 0 0.5rem' }}>
-          Model confidence over time (uncalibrated)
+          Model confidence over time
         </h3>
         <p id="confidence-chart-desc" style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: 0 }}>
-          {charts?.confidence_axis_label || 'Model confidence (uncalibrated)'} — not disease probability.
+          {charts?.confidence_axis_label || 'Model confidence'} — not disease probability.
         </p>
 
         {filtered.length === 0 ? (
@@ -248,7 +248,7 @@ export function PatientAssessmentCharts({ charts, history }) {
               )}
               {plot.plotPoints.map((p) => {
                 const isActive = activePointId === p.predictionId;
-                const label = `${formatDateLabel(p.dateIso)}: ${p.confidenceDisplay} uncalibrated model confidence${
+                const label = `${formatDateLabel(p.dateIso)}: ${p.confidenceDisplay} model confidence${
                   p.modelVersion ? `, model ${p.modelVersion}` : ''
                 }`;
                 return (
@@ -278,7 +278,7 @@ export function PatientAssessmentCharts({ charts, history }) {
                   <strong>Date:</strong> {formatDateLabel(activePoint.dateIso)}
                 </div>
                 <div className="patient-assessment-charts__tooltip-row">
-                  <strong>Model confidence:</strong> {activePoint.confidenceDisplay} (uncalibrated)
+                  <strong>Model confidence:</strong> {activePoint.confidenceDisplay}
                 </div>
                 {activePoint.modelVersion && (
                   <div className="patient-assessment-charts__tooltip-row">
@@ -298,11 +298,11 @@ export function PatientAssessmentCharts({ charts, history }) {
 
       <section className="card patient-assessment-charts__section" aria-labelledby="proxy-history-title">
         <h3 id="proxy-history-title" style={{ fontSize: '0.9375rem', margin: '0 0 0.5rem' }}>
-          Assessment history (research proxy labels)
+          Assessment history (research labels)
         </h3>
         <AssessmentHistorySection
           history={history}
-          classAxisLabel={charts?.class_axis_label || 'Research proxy class (NORM vs MI/STTC)'}
+          classAxisLabel={charts?.class_axis_label || 'Research class (NORM vs MI/STTC)'}
         />
       </section>
 

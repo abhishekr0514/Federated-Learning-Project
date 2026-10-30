@@ -127,6 +127,20 @@ async def test_admin_hospitals():
         assert hosps["count"] == 1
 
 @pytest.mark.anyio
+async def test_admin_metrics_offline_report():
+    token, _ = create_access_token(user_id=str(SUPER_ADMIN_ID))
+    headers = {"Authorization": f"Bearer {token}"}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        res = await ac.get("/api/v1/admin/metrics", headers=headers)
+        assert res.status_code == 200
+        data = res.json()["data"]
+        assert data["status"] in ("AVAILABLE", "REPORT_NOT_FOUND", "REPORT_INVALID")
+        if data["status"] == "AVAILABLE":
+            assert "gat_centralized" in data["models"]
+            assert data["models"]["gat_centralized"]["auroc"] is not None
+
+
+@pytest.mark.anyio
 async def test_admin_federated():
     token, _ = create_access_token(user_id=str(SUPER_ADMIN_ID))
     headers = {"Authorization": f"Bearer {token}"}
